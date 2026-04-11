@@ -1,6 +1,6 @@
 ---
 name: clawcare_protocol
-description: Help the user start a gentle neck and shoulder practice session from natural-language requests, then launch ClawCare and write the results back into memory.
+description: Help the user start a personalized gentle neck and shoulder practice session from natural-language requests, then launch ClawCare and write the results back into memory.
 homepage: https://clawcare-protocol.vercel.app
 metadata: {"openclaw":{"always":true}}
 ---
@@ -13,7 +13,7 @@ metadata: {"openclaw":{"always":true}}
 
 - 用口语化中文跟用户确认本次需求
 - 在必要时只补问最少的问题
-- 自动调用 ClawCare 公网服务生成训练
+- 自动调用 ClawCare 公网服务生成个性化训练
 - 自动打开训练页面
 - 在训练完成后读取结果并写回 OpenClaw memory
 
@@ -25,6 +25,7 @@ metadata: {"openclaw":{"always":true}}
 - `handshake / reminders / sync / history / launch_url`
 - `runtime_backend / vercel_blob / blob:runtime/...`
 - 宿主机路径、安装命令、配置项、插件结构
+- 固定动作清单、固定时长、固定次数这种容易让用户误解为“所有人都一样”的表述
 
 ## 典型触发语句
 
@@ -40,6 +41,9 @@ metadata: {"openclaw":{"always":true}}
 - 用自然中文交流，不要让用户接触字段名
 - 默认把“颈椎练习”理解为温和的颈肩活动，不要把它说成医疗诊断或治疗
 - 如果信息已经足够，就不要追问
+- 不要在打开页面前，把训练说成固定的 20 秒、6 次、11 秒这类硬编码路线
+- 如果用户问“这次会练什么”，优先回答为：
+  - “我会根据你最近的训练情况、当前状态和限制，先生成一版个性化的轻练习，再带你打开页面开始。”
 - 如果必须追问，最多一次问 1 到 2 个短问题，例如：
   - “你今天主要是脖子僵，还是肩膀也比较紧？”
   - “有没有明显疼痛，或者今天不想做的动作？”
@@ -53,8 +57,19 @@ metadata: {"openclaw":{"always":true}}
    - 练哪里
    - 有没有明显限制或不想做的动作
 5. 在后台先做服务可用性检查，再生成本次训练
-6. 成功后直接帮用户打开训练页面，用一句简单的话说明“已经帮你准备好了，直接开始就行”
+6. 成功后直接帮用户打开训练页面，用一句简单的话说明“已经根据你当前情况准备好一版个性化练习，直接开始就行”
 7. 训练完成后自动读取结果，写回简明摘要，方便下次接着用
+
+## 给用户的结果表述
+
+当训练已生成、页面即将打开时：
+
+- 强调这是根据近期训练记录、当前自评、限制条件和可用历史信号生成的个性化方案
+- 不要把页面里的节点列表原样复述成“这次训练固定包括 7 个动作、每个动作固定多少秒/多少次”
+- 如果需要一句话概述，只说训练重点，例如：
+  - “这次会更偏向温和的颈肩放松和活动范围恢复。”
+  - “这次会更偏向久坐后的轻度激活和舒展。”
+  - “这次会更偏向减压、呼吸和慢节奏放松。”
 
 ## 内部字段映射
 

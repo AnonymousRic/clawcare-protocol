@@ -1,6 +1,6 @@
 # clawcare_protocol
 
-`clawcare_protocol` 是一个面向 OpenClaw 的训练 skill。安装完成后，用户只需要说一句“我现在想做个颈椎练习”，OpenClaw 就应该自己接住需求、完成后台准备并拉起训练页面。
+`clawcare_protocol` 是一个面向 OpenClaw 的训练 skill。安装完成后，用户只需要说一句“我现在想做个颈椎练习”，OpenClaw 就应该自己接住需求、基于近期数据生成个性化方案、完成后台准备并拉起训练页面。
 
 ## 用户侧体验目标
 
