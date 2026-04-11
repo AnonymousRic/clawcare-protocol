@@ -4,9 +4,9 @@
   "description": "Install the ClawCare OpenClaw skill so users can start a personalized gentle neck and shoulder practice session from natural-language requests.",
   "author": {
     "name": "ClawCare",
-    "url": "https://clawcare-protocol.vercel.app"
+    "url": "https://clawcare-protocol.vercel.app/?mode=protocol&entry=openclaw"
   },
-  "homepage": "https://clawcare-protocol.vercel.app",
+  "homepage": "https://clawcare-protocol.vercel.app/?mode=protocol&entry=openclaw",
   "keywords": [
     "clawcare",
     "neck",
@@ -25,7 +25,7 @@
       "Interactive",
       "Write"
     ],
-    "websiteURL": "https://clawcare-protocol.vercel.app",
+    "websiteURL": "https://clawcare-protocol.vercel.app/?mode=protocol&entry=openclaw",
     "defaultPrompt": [
       "我现在想做个颈椎练习。",
       "我想活动一下脖子。",

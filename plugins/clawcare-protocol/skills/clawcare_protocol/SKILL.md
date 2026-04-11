@@ -1,7 +1,7 @@
 ---
 name: clawcare_protocol
 description: Help the user start a personalized gentle neck and shoulder practice session from natural-language requests, then launch ClawCare and write the results back into memory.
-homepage: https://clawcare-protocol.vercel.app
+homepage: https://clawcare-protocol.vercel.app/?mode=protocol&entry=openclaw
 metadata: {"openclaw":{"always":true}}
 ---
 
@@ -50,6 +50,19 @@ metadata: {"openclaw":{"always":true}}
   - “你今天主要是脖子僵，还是肩膀也比较紧？”
   - “有没有明显疼痛，或者今天不想做的动作？”
 
+## 页面调起规则
+
+- 这个 skill 的网页入口固定视为 `OpenClaw` 入口，不要打开裸首页 `https://clawcare-protocol.vercel.app`
+- 不要把用户带到 `OpenClaw 启动 / 网页直启 / Legacy Demo` 的三入口选择页；对这个 skill 来说，那是错误落点
+- 只要是从这个 skill 发起页面调起，URL 都应明确带上 `mode=protocol`
+- 只要是从这个 skill 发起页面调起，入口都应明确带上 `entry=openclaw`
+- 如果后台已经拿到 `launch_url`，必须原样打开返回的 `launch_url`，不要删改 query，也不要自行退回首页
+- 如果当前还没有 `launch_url`，但需要先把页面唤起，使用这个保底直达入口：
+  - `https://clawcare-protocol.vercel.app/?mode=protocol&entry=openclaw`
+- 如果有 `return_to`，要跟随 `launch_url` 原样保留；如果是手动拼接保底入口，再补上 `return_to`
+- 定时启动、automation 唤起、用户主动发起，这三种场景都遵守同一条规则：优先 `launch_url`，否则用 `/?mode=protocol&entry=openclaw`，不要打开首页
+- 用户输入的作用是帮助整理 `openclawContext` 并生成更合适的训练，不是决定是否进入首页；首页不是这个 skill 的合法中间页
+
 ## 调起前的前置提示
 
 目标：让用户在页面打开前，先听到“这次为什么是为我安排的”，但不要被一大段分析打断。
@@ -81,13 +94,13 @@ metadata: {"openclaw":{"always":true}}
 
 1. 先判断用户是否在请求一次温和的颈肩练习、久坐后放松、轻度激活或舒缓练习
 2. 如果用户提到明显疼痛加重、头晕、胸闷、麻木等异常，先停止推进训练，并建议线下处理
-3. 如果用户只是说“做个颈椎练习”，默认把本次方向理解为颈肩放松，并自动偏向 `neck_wake`
+3. 如果用户只是说“做个颈椎练习”，默认把本次方向理解为颈肩放松
 4. 只有在信息不足时才补问：
    - 练哪里
    - 有没有明显限制或不想做的动作
 5. 如果信息已足够，先给用户 1 句前置提示，说明这次训练的重点方向，再在后台静默做服务可用性检查并生成本次训练
 6. 如果信息不足，但仍不影响安全启动，只补问 1 个最关键的短问题；不要把对话变成问卷
-7. 成功后直接帮用户打开训练页面，用一句简单的话说明“已经按你当前情况准备好一版个性化练习，直接开始就行”
+7. 成功后直接帮用户打开训练页面；如果已经拿到 `launch_url` 就原样打开它，如果还没有 `launch_url` 就打开 `https://clawcare-protocol.vercel.app/?mode=protocol&entry=openclaw`，不要回到首页
 8. 训练完成后自动读取结果，写回简明摘要，方便下次接着用
 
 ## 给用户的结果表述
@@ -150,10 +163,10 @@ GET https://clawcare-protocol.vercel.app/api/openclaw/handshake
 
 ```json
 {
-  "goalNote": "今天想优先缓解久坐后的颈肩僵硬。",
-  "preferredFamilies": ["neck_wake"],
-  "avoidActionTypes": ["POSTURE_RESET_OVERHEAD"],
-  "bodyLimits": ["避免大幅举臂", "右侧颈部旋转角度偏小"]
+  "goalNote": "按用户当次表达整理出的训练目标",
+  "preferredFamilies": ["按当次状态整理出的协议偏好"],
+  "avoidActionTypes": ["按当次限制整理出的避让动作"],
+  "bodyLimits": ["用自然语言描述当前动作限制"]
 }
 ```
 
@@ -162,11 +175,9 @@ GET https://clawcare-protocol.vercel.app/api/openclaw/handshake
 - `avoidActionTypes` 是希望避开的动作类型
 - `bodyLimits` 是自由文本限制说明
 
-默认映射建议：
+整理原则：
 
-- 用户说“颈椎练习”“脖子僵”“肩颈紧”，默认 `preferredFamilies = ["neck_wake"]`
-- 用户说“坐太久了，想活动一下”，可偏向 `sedentary_activate`
-- 用户更强调放松、压力大、呼吸浅时，可偏向 `stress_reset`
+- 根据用户表达整理 `preferredFamilies / bodyLimits / avoidActionTypes`
 - 用户没说禁忌时，不要编造 `avoidActionTypes`
 - 用户没说限制时，不要为了凑字段而追问
 
@@ -189,14 +200,14 @@ POST https://clawcare-protocol.vercel.app/api/reminders
     "discomfort": 0.24
   },
   "memorySignals": [
-    "最近两次训练后颈部恢复还可以，但下午容易再僵。"
+    "按近期状态整理出的关键信号"
   ],
   "recentRuns": [],
   "openclawContext": {
-    "goalNote": "今天优先缓解伏案后的颈肩僵硬，并保持低强度。",
-    "preferredFamilies": ["neck_wake"],
-    "avoidActionTypes": ["POSTURE_RESET_OVERHEAD"],
-    "bodyLimits": ["避免大幅举臂", "右侧颈部旋转角度偏小"]
+    "goalNote": "按用户当次表达整理出的训练目标",
+    "preferredFamilies": ["按当次状态整理出的协议偏好"],
+    "avoidActionTypes": ["按当次限制整理出的避让动作"],
+    "bodyLimits": ["用自然语言描述当前动作限制"]
   }
 }
 ```
@@ -205,6 +216,8 @@ POST https://clawcare-protocol.vercel.app/api/reminders
 - 优先采用主推荐
 - 需要展示备选时，再参考 `alternatives`
 - 打开返回的 `launch_url`
+- 不要去掉 `mode=protocol`、`entry=openclaw`、`return_to` 等 query 参数
+- 不要把 `launch_url` 替换成站点首页或三入口页
 
 ## 训练完成后的结果读取
 
