@@ -1,0 +1,59 @@
+{
+  "baseUrl": "https://clawcare-protocol.vercel.app",
+  "returnTo": "openclaw://clawcare",
+  "automation": {
+    "dailyPlan": {
+      "enabled": true,
+      "scheduleLocalTime": "09:00",
+      "mode": "silent_prepare",
+      "autoOpen": false
+    },
+    "postRunSync": {
+      "enabled": true,
+      "followUpDelayMin": 20
+    },
+    "workdayReminder": {
+      "enabled": false,
+      "scheduleLocalTime": "15:00",
+      "weekdays": [1, 2, 3, 4, 5]
+    }
+  },
+  "consent": {
+    "disclosureShown": false,
+    "workdayReminderExplained": false
+  },
+  "openclawContext": {
+    "goalNote": "",
+    "preferredFamilies": [],
+    "avoidActionTypes": [],
+    "bodyLimits": []
+  },
+  "personalizationSignals": {
+    "preferences": {
+      "focus": "neck_relief",
+      "pace": "gentle",
+      "durationMin": 6,
+      "preferredFamilies": []
+    },
+    "questionnaire": {
+      "focus": "neck_relief",
+      "pace": "gentle",
+      "durationMin": 6
+    },
+    "health": {
+      "sleepHours": 7,
+      "stepBucket": "mid",
+      "energyBucket": "mid"
+    },
+    "weather": {
+      "condition": "",
+      "severity": "normal"
+    }
+  },
+  "workState": {
+    "workModeEnabled": false,
+    "reminderEnabled": false,
+    "continuousActiveMinutes": 0,
+    "lastBreakAt": ""
+  }
+}
