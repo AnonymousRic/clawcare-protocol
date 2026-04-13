@@ -476,7 +476,7 @@ export const writeConfig = async (configPath, config) => {
 };
 
 const buildBootstrapDisclosure = () => (
-  '我已经为 ClawCare 准备好默认闭环：训练后自动回流记录，每天早上静默准备一版训练。主动提醒默认关闭；只有你明确要求后才会开启，而且不会读取屏幕、输入内容或摄像头画面。'
+  'ClawCare \u5df2\u6309\u9ed8\u8ba4\u95ed\u73af\u51c6\u5907\u5b8c\u6210\uff1a\u542f\u52a8\u8bad\u7ec3\u65f6\u4f1a\u81ea\u52a8\u7ed3\u5408\u672c\u5730\u8bad\u7ec3\u5386\u53f2\u3001recent_analysis \u548c\u6700\u8fd1\u7684\u8bb0\u5fc6\u6458\u8981\u751f\u6210\u4e2a\u6027\u5316\u65b9\u6848\uff1b\u8bad\u7ec3\u540e\u4f1a\u81ea\u52a8\u5b89\u6392\u56de\u6d41\u5199\u5165\u8bad\u7ec3\u8bb0\u5f55\u3001recent_analysis \u548c\u5f53\u5929\u8bb0\u5fc6\u3002\u4e3b\u52a8\u63d0\u9192\u9ed8\u8ba4\u5173\u95ed\uff0c\u53ea\u6709\u4f60\u660e\u786e\u8981\u6c42\u540e\u624d\u4f1a\u5f00\u542f\uff0c\u800c\u4e14\u4e0d\u4f1a\u8bfb\u53d6\u5c4f\u5e55\u3001\u8f93\u5165\u5185\u5bb9\u6216\u6444\u50cf\u5934\u753b\u9762\u3002'
 );
 
 export const ensureBootstrap = async (options = {}) => {
@@ -589,9 +589,9 @@ export const collectRecentAnalysisSignals = async (recentAnalysisPath) => {
   const payload = extractJsonFence(markdown);
   const summaryLine = markdown
     .split(/\r?\n/)
-    .find((line) => /^-\s*(总结|下次建议|最近一次训练)/.test(line));
+    .find((line) => /^-\s*(\u603b\u7ed3|\u4e0b\u6b21\u5efa\u8bae|\u6700\u8fd1\u4e00\u6b21\u8bad\u7ec3)/.test(line));
   return {
-    summary: summaryLine ? summaryLine.replace(/^- [^:：]+[:：]\s*/, '').trim() : '',
+    summary: summaryLine ? summaryLine.replace(/^- [^:\uFF1A]+[:\uFF1A]\s*/, '').trim() : '',
     memorySignals: Array.isArray(payload?.memorySignals)
       ? uniqueStrings(payload.memorySignals)
       : [],
@@ -638,7 +638,7 @@ export const listRunRecords = async (runsDir) => {
 
 export const buildRecentRunSignalsFromRecords = (records) => (
   records.slice(0, 5).map((record) => ({
-    protocol_id: record.session?.protocol_id ?? record.note?.protocol ?? 'clawcare_protocol',
+    protocol_id: record.session?.protocol_id ?? record.note?.protocol ?? 'clawcare-protocol',
     protocol_family: record.session?.protocol_family ?? record.reminder?.protocol_family,
     completion: record.note?.completion,
     fatigue: record.note?.fatigue,
@@ -813,37 +813,37 @@ export const formatMemoryMarkdown = (note, runRecord) => {
   const marker = `<!-- clawcare:run:${note.run_id} -->`;
   const lines = [
     marker,
-    '## ClawCare 训练记录',
+    '## ClawCare \u8bad\u7ec3\u8bb0\u5f55',
     '',
-    `- 会话 ID: ${note.session_id}`,
-    `- 运行 ID: ${note.run_id}`,
-    `- 协议名称: ${note.protocol}`,
-    `- 同步时间: ${note.sync_generated_at}`,
-    `- 完成度: ${Number(note.completion ?? 0).toFixed(2)}`,
-    `- 稳定度: ${Number(note.stability ?? 0).toFixed(2)}`,
-    `- 对称性: ${Number(note.symmetry ?? 0).toFixed(2)}`,
-    `- 疲劳: ${Number(note.fatigue ?? 0).toFixed(2)}`,
-    `- 推荐强度: ${note.recommended_intensity ?? 'steady'}`,
-    `- 总结: ${note.summary}`,
-    `- 下次建议: ${note.next_suggestion}`,
+    `- \u4f1a\u8bdd ID: ${note.session_id}`,
+    `- \u8fd0\u884c ID: ${note.run_id}`,
+    `- \u534f\u8bae\u540d\u79f0: ${note.protocol}`,
+    `- \u540c\u6b65\u65f6\u95f4: ${note.sync_generated_at}`,
+    `- \u5b8c\u6210\u5ea6: ${Number(note.completion ?? 0).toFixed(2)}`,
+    `- \u7a33\u5b9a\u5ea6: ${Number(note.stability ?? 0).toFixed(2)}`,
+    `- \u5bf9\u79f0\u6027: ${Number(note.symmetry ?? 0).toFixed(2)}`,
+    `- \u75b2\u52b3: ${Number(note.fatigue ?? 0).toFixed(2)}`,
+    `- \u63a8\u8350\u5f3a\u5ea6: ${note.recommended_intensity ?? 'steady'}`,
+    `- \u603b\u7ed3: ${note.summary}`,
+    `- \u4e0b\u6b21\u5efa\u8bae: ${note.next_suggestion}`,
   ];
 
   if (Array.isArray(note.warnings) && note.warnings.length) {
-    lines.push('', '### 预警');
+    lines.push('', '### \u9884\u8b66');
     for (const warning of note.warnings) {
       lines.push(`- ${warning}`);
     }
   }
 
   if (Array.isArray(note.conflicts) && note.conflicts.length) {
-    lines.push('', '### 冲突');
+    lines.push('', '### \u51b2\u7a81');
     for (const conflict of note.conflicts) {
       lines.push(`- ${conflict}`);
     }
   }
 
   if (runRecord?.run?.summary && runRecord.run.summary !== note.summary) {
-    lines.push('', `- 训练端摘要: ${runRecord.run.summary}`);
+    lines.push('', `- \u8bad\u7ec3\u7aef\u6458\u8981: ${runRecord.run.summary}`);
   }
 
   return `${lines.join('\n')}\n`;
@@ -851,12 +851,12 @@ export const formatMemoryMarkdown = (note, runRecord) => {
 
 export const writeRecentAnalysis = async (workspacePaths, note) => {
   const payload = {
-    summary: `最近一次 ClawCare 训练已同步：${note.summary}`,
+    summary: `\u6700\u8fd1\u4e00\u6b21 ClawCare \u8bad\u7ec3\u5df2\u540c\u6b65\uff1a${note.summary}`,
     memorySignals: uniqueStrings([
-      `最近一次 ClawCare 训练：${note.summary}`,
-      `下一次建议：${note.next_suggestion}`,
-      ...(Array.isArray(note.warnings) ? note.warnings.map((warning) => `注意：${warning}`) : []),
-      ...(Array.isArray(note.conflicts) ? note.conflicts.map((conflict) => `冲突：${conflict}`) : []),
+      `\u6700\u8fd1\u4e00\u6b21 ClawCare \u8bad\u7ec3\uff1a${note.summary}`,
+      `\u4e0b\u4e00\u6b21\u5efa\u8bae\uff1a${note.next_suggestion}`,
+      ...(Array.isArray(note.warnings) ? note.warnings.map((warning) => `\u6ce8\u610f\uff1a${warning}`) : []),
+      ...(Array.isArray(note.conflicts) ? note.conflicts.map((conflict) => `\u51b2\u7a81\uff1a${conflict}`) : []),
     ]).slice(0, 8),
     lastTraining: {
       sessionId: note.session_id,
@@ -879,12 +879,12 @@ export const writeRecentAnalysis = async (workspacePaths, note) => {
     lastUpdatedAt: note.sync_generated_at,
   };
   const markdown = [
-    '# 最近健康分析',
+    '# \u6700\u8fd1\u5065\u5eb7\u5206\u6790',
     '',
-    `- 更新时间: ${note.sync_generated_at}`,
-    `- 最近一次训练: ${note.protocol}`,
-    `- 总结: ${note.summary}`,
-    `- 下次建议: ${note.next_suggestion}`,
+    `- \u66f4\u65b0\u65f6\u95f4: ${note.sync_generated_at}`,
+    `- \u6700\u8fd1\u4e00\u6b21\u8bad\u7ec3: ${note.protocol}`,
+    `- \u603b\u7ed3: ${note.summary}`,
+    `- \u4e0b\u6b21\u5efa\u8bae: ${note.next_suggestion}`,
     '',
     '```json',
     stableStringify(payload),
@@ -1097,7 +1097,7 @@ export const buildCronExpressionForLocalTime = (timeText, weekdays = null) => {
 
 const buildCronSystemEvent = (action, payload) => [
   `ClawCare automation event: ${action}.`,
-  'Use the installed `clawcare_protocol` skill.',
+  'Use the installed `clawcare-protocol` skill.',
   'Use the `exec` tool to run the local Node script described below exactly once.',
   'Only touch files under `~/.openclaw/workspace/clawcare/` and the current daily memory file.',
   `When the work completes successfully and no direct user reply is required, respond with ${CLAWCARE_NO_REPLY}.`,
@@ -1118,8 +1118,8 @@ export const buildDailyPlanSystemEvent = ({
     configPath,
     '--intent',
     mode === 'notify'
-      ? '请准备今天的 ClawCare 训练，并在合适时提醒我开始。'
-      : '请静默准备今天的 ClawCare 训练，不要主动打开页面。',
+      ? '\u8bf7\u51c6\u5907\u4eca\u5929\u7684 ClawCare \u8bad\u7ec3\uff0c\u5e76\u81ea\u52a8\u7ed3\u5408\u672c\u5730\u8bb0\u5fc6\u3001recent_analysis \u548c\u6700\u8fd1\u8bad\u7ec3\u8bb0\u5f55\u751f\u6210\u4e2a\u6027\u5316\u65b9\u6848\uff1b\u5728\u5408\u9002\u65f6\u63d0\u9192\u6211\u5f00\u59cb\u3002'
+      : '\u8bf7\u9759\u9ed8\u51c6\u5907\u4eca\u5929\u7684 ClawCare \u8bad\u7ec3\uff0c\u5e76\u81ea\u52a8\u7ed3\u5408\u672c\u5730\u8bb0\u5fc6\u3001recent_analysis \u548c\u6700\u8fd1\u8bad\u7ec3\u8bb0\u5f55\u751f\u6210\u4e2a\u6027\u5316\u65b9\u6848\uff1b\u4e0d\u8981\u4e3b\u52a8\u6253\u5f00\u9875\u9762\u3002',
     mode === 'notify' ? '--open' : '--no-open',
   ],
   mode,
@@ -1155,7 +1155,7 @@ export const buildWorkdayReminderSystemEvent = ({
     '--config',
     configPath,
     '--intent',
-    '请按工作日舒展提醒准备一版偏轻的颈肩放松训练。注意这只是时间型提醒，不代表任何行为监测。',
+    '\u8bf7\u6309\u5de5\u4f5c\u65e5\u8212\u5c55\u63d0\u9192\u51c6\u5907\u4e00\u7248\u504f\u8f7b\u7684\u9888\u80a9\u653e\u677e\u8bad\u7ec3\uff0c\u5e76\u81ea\u52a8\u7ed3\u5408\u672c\u5730\u8bb0\u5fc6\u3001recent_analysis \u548c\u6700\u8fd1\u8bad\u7ec3\u8bb0\u5f55\u751f\u6210\u4e2a\u6027\u5316\u65b9\u6848\u3002\u6ce8\u610f\u8fd9\u53ea\u662f\u65f6\u95f4\u578b\u63d0\u9192\uff0c\u4e0d\u4ee3\u8868\u4efb\u4f55\u884c\u4e3a\u76d1\u6d4b\u3002',
     '--no-open',
   ],
   reminderType: 'time_boxed_workday',

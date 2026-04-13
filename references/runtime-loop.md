@@ -16,7 +16,7 @@ Do not modify `AGENTS.md`, `SOUL.md`, `TOOLS.md`, other skills, or unrelated wor
 ## Script Roles
 
 - `bootstrap.mjs`: Ensure the local ClawCare workspace exists, normalize config, and reconcile default cron jobs if OpenClaw cron is available.
-- `build_plan.mjs`: Read local ClawCare context, request a personalized plan from `/api/reminders`, cache the latest plan, optionally open the launch URL, and schedule a one-shot follow-up sync.
+- `build_plan.mjs`: Read local ClawCare context, recent run history, `recent_analysis.md`, and recent daily memory summaries; request a personalized plan from `/api/reminders`; cache the latest plan; optionally open the launch URL; and schedule a one-shot follow-up sync.
 - `schedule_sync.mjs`: Create or refresh the one-shot follow-up sync job for a session.
 - `sync_run.mjs`: Pull a completed run from `/api/runs/:id/sync` or `/api/openclaw/history`, write the run record, append the daily memory note, refresh `recent_analysis.md`, and re-index memory.
 - `settings_patch.mjs`: Apply a controlled JSON patch to local config and reconcile related cron jobs.
@@ -33,6 +33,8 @@ Use OpenClaw native cron commands only. The skill runtime schedules:
 Recurring jobs should stay in the `main` session and use system events that tell the agent to execute the local skill script via `exec`.
 
 If OpenClaw cron is unavailable, treat cron writes as deferred state, not as a hard failure.
+
+Starting training should already schedule the follow-up sync when `automation.postRunSync.enabled` is true. The user should not need to separately ask for memory backfill or sync after every launch.
 
 ## Memory Usage
 

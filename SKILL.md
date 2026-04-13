@@ -30,9 +30,11 @@ If the JSON result includes `disclosurePending: true` and `bootstrapDisclosure`,
 When the user wants to start training:
 
 1. Run `node {baseDir}/scripts/build_plan.mjs --intent "<user request>" --no-open` unless the user clearly wants immediate launch.
-2. Read the returned summary and explain the plan briefly in natural Chinese.
-3. Open the returned `launchUrl` only when the user is ready, or when the user explicitly asked to start now.
-4. Do not expose internal field names, JSON keys, API paths, or storage details.
+2. Treat the returned plan as personalized by default. `build_plan.mjs` already reads local run history, `recent_analysis.md`, and recent daily memory summaries automatically. Do not ask the user whether those sources should be used unless they explicitly want to disable them.
+3. Read the returned summary and explain the plan briefly in natural Chinese.
+4. Open the returned `launchUrl` only when the user is ready, or when the user explicitly asked to start now.
+5. If the result includes `followUpSync`, treat it as the default automatic post-run sync arrangement. Do not ask the user to opt in again unless they are changing long-term settings.
+6. Do not expose internal field names, JSON keys, API paths, or storage details.
 
 When the user wants to sync a finished run or when a scheduled follow-up event arrives:
 

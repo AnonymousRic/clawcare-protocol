@@ -6,7 +6,7 @@ Use only:
 
 - ClawCare-generated training records under `~/.openclaw/workspace/clawcare/`
 - Daily memory summaries under `~/.openclaw/workspace/memory/`
-- The user’s current natural-language request
+- The user's current natural-language request
 - Long-term preferences the user explicitly asked to store
 
 These data stay on the user side for planning and memory updates. Do not add any new outbound data channel beyond the existing ClawCare training APIs.
