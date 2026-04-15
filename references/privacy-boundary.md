@@ -25,6 +25,7 @@ Do not read:
 
 - `scheduledReminder` does not need a second confirmation. If the user explicitly asks to set a reminder or timed task, treat that request as confirmed.
 - `proactiveReminder` needs a clear opt-in because it can interrupt the user without a fresh request.
+- Fresh install should not silently enable recurring proactive reminders.
 
 Before enabling `proactiveReminder`, explain only these points:
 

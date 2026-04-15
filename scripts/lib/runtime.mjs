@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 export const CLAWCARE_DEFAULT_BASE_URL = 'https://clawcare-protocol.vercel.app';
@@ -18,13 +19,14 @@ export const CLAWCARE_JOB_NAMES = {
   proactiveReminder: 'clawcare-proactive-reminder',
   legacyWorkdayReminder: 'clawcare-workday-reminder',
 };
+const CLAWCARE_GLOBAL_JOB_NAMES = new Set(Object.values(CLAWCARE_JOB_NAMES));
 
 const DEFAULT_CONFIG = {
   baseUrl: CLAWCARE_DEFAULT_BASE_URL,
   returnTo: CLAWCARE_DEFAULT_RETURN_TO,
   automation: {
     dailyPlan: {
-      enabled: true,
+      enabled: false,
       scheduleLocalTime: '09:00',
       mode: 'silent_prepare',
       autoOpen: false,
@@ -49,7 +51,6 @@ const DEFAULT_CONFIG = {
     proactiveReminderExplained: false,
   },
   openclawContext: {
-    goalNote: '',
     preferredFamilies: [],
     avoidActionTypes: [],
     bodyLimits: [],
@@ -72,7 +73,6 @@ const DEFAULT_CONFIG = {
       energyBucket: 'mid',
     },
     weather: {
-      condition: '',
       severity: 'normal',
     },
   },
@@ -140,6 +140,16 @@ const sanitizeToken = (value) => String(value ?? '')
   .replace(/[^a-z0-9_-]+/gi, '_')
   .replace(/^_+|_+$/g, '')
   .toLowerCase();
+const normalizeComparablePath = (value) => path.resolve(String(value ?? ''))
+  .replace(/\\/g, '/')
+  .toLowerCase();
+const trimToUndefined = (value) => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed || undefined;
+};
 
 const summarizeText = (text, maxLength = 220) => {
   const normalized = String(text ?? '').replace(/\s+/g, ' ').trim();
@@ -195,6 +205,10 @@ const writeJsonFile = async (filePath, value) => {
 };
 
 const compactObject = (value) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }
   if (Array.isArray(value)) {
     return value
       .map((entry) => compactObject(entry))
@@ -318,13 +332,13 @@ const normalizeWeekdays = (value) => {
 
 const normalizeOpenclawContext = (value) => {
   const source = isRecord(value) ? value : {};
-  return {
-    goalNote: typeof source.goalNote === 'string' ? source.goalNote.trim() : '',
+  return compactObject({
+    goalNote: trimToUndefined(source.goalNote),
     preferredFamilies: uniqueStrings(Array.isArray(source.preferredFamilies) ? source.preferredFamilies : [])
       .filter((entry) => VALID_FAMILIES.has(entry)),
     avoidActionTypes: uniqueStrings(Array.isArray(source.avoidActionTypes) ? source.avoidActionTypes : []),
     bodyLimits: uniqueStrings(Array.isArray(source.bodyLimits) ? source.bodyLimits : []),
-  };
+  });
 };
 
 const normalizePreferences = (value) => {
@@ -365,15 +379,22 @@ const normalizeQuestionnaire = (value) => {
 
 const normalizePersonalizationSignals = (value) => {
   const source = isRecord(value) ? value : {};
+  const weatherSource = isRecord(source.weather) ? source.weather : {};
   return {
     preferences: normalizePreferences(source.preferences),
     questionnaire: normalizeQuestionnaire(source.questionnaire),
     health: isRecord(source.health)
       ? { ...DEFAULT_CONFIG.personalizationSignals.health, ...source.health }
       : deepClone(DEFAULT_CONFIG.personalizationSignals.health),
-    weather: isRecord(source.weather)
-      ? { ...DEFAULT_CONFIG.personalizationSignals.weather, ...source.weather }
-      : deepClone(DEFAULT_CONFIG.personalizationSignals.weather),
+    weather: compactObject(
+      isRecord(source.weather)
+        ? {
+          ...DEFAULT_CONFIG.personalizationSignals.weather,
+          ...weatherSource,
+          condition: trimToUndefined(weatherSource.condition),
+        }
+        : deepClone(DEFAULT_CONFIG.personalizationSignals.weather),
+    ),
   };
 };
 
@@ -510,7 +531,7 @@ export const writeConfig = async (configPath, config) => {
 };
 
 const buildBootstrapDisclosure = () => (
-  'ClawCare 已准备好：启动训练会自动结合本地训练记录、recent_analysis 和最近记忆生成个性化方案，训练后会自动回写记录。你主动设置的定时提醒会直接生效；OpenClaw 自主提醒默认关闭，只有你明确开启后才会发送，而且不会读取屏幕、输入内容或相机画面。'
+  'ClawCare 已准备好：启动训练会自动结合本地训练记录、recent_analysis 和最近记忆生成个性化方案，训练后会自动回写记录。安装后不会默认创建定时任务；你主动设置的提醒会直接生效，OpenClaw 自主提醒默认关闭，而且不会读取屏幕、输入内容或相机画面。'
 );
 
 export const ensureBootstrap = async (options = {}) => {
@@ -632,6 +653,22 @@ export const collectRecentAnalysisSignals = async (recentAnalysisPath) => {
     selfReport: isRecord(payload?.selfReport) ? payload.selfReport : undefined,
     raw: markdown,
     payload,
+  };
+};
+
+export const getWorkspaceScopeToken = (workspacePaths) => createHash('sha1')
+  .update(normalizeComparablePath(workspacePaths.configPath))
+  .digest('hex')
+  .slice(0, 10);
+
+export const getScopedAutomationJobNames = (workspacePaths) => {
+  const scopeToken = getWorkspaceScopeToken(workspacePaths);
+  return {
+    scopeToken,
+    dailyPlan: `${CLAWCARE_JOB_NAMES.dailyPlan}-${scopeToken}`,
+    scheduledReminder: `${CLAWCARE_JOB_NAMES.scheduledReminder}-${scopeToken}`,
+    proactiveReminder: `${CLAWCARE_JOB_NAMES.proactiveReminder}-${scopeToken}`,
+    legacyWorkdayReminder: CLAWCARE_JOB_NAMES.legacyWorkdayReminder,
   };
 };
 
@@ -1201,13 +1238,15 @@ const buildCronSystemEvent = (action, payload) => [
 export const buildDailyPlanSystemEvent = ({
   skillRoot,
   configPath,
+  workspaceScope,
 }) => buildCronSystemEvent('daily-plan', {
+  workspaceScope,
   script: path.join(skillRoot, 'scripts', 'build_plan.mjs'),
   args: [
     '--config',
     configPath,
     '--intent',
-    '请静默准备今天的 ClawCare 训练，并自动结合本地记忆、recent_analysis 和最近训练记录生成个性化方案，不要主动打开页面。',
+    '请静默准备今天的 ClawCare 训练，并结合本地记忆、recent_analysis 和最近训练记录生成个性化方案，不要主动打开页面。',
     '--reminder-kind',
     'daily_plan',
     '--no-open',
@@ -1238,6 +1277,7 @@ export const buildFollowUpSyncSystemEvent = ({
 const buildReminderTurnMessage = ({
   skillRoot,
   configPath,
+  workspaceScope,
   reminderKind,
   intentText,
 }) => [
@@ -1251,6 +1291,7 @@ const buildReminderTurnMessage = ({
   '',
   '```json',
   stableStringify({
+    workspaceScope,
     script: path.join(skillRoot, 'scripts', 'build_plan.mjs'),
     args: [
       '--config',
@@ -1268,9 +1309,11 @@ const buildReminderTurnMessage = ({
 export const buildScheduledReminderMessage = ({
   skillRoot,
   configPath,
+  workspaceScope,
 }) => buildReminderTurnMessage({
   skillRoot,
   configPath,
+  workspaceScope,
   reminderKind: 'scheduled',
   intentText: '请准备一版适合当前状态的轻量颈肩活动训练，用于定时提醒消息。不要自动打开页面。',
 });
@@ -1278,9 +1321,11 @@ export const buildScheduledReminderMessage = ({
 export const buildProactiveReminderMessage = ({
   skillRoot,
   configPath,
+  workspaceScope,
 }) => buildReminderTurnMessage({
   skillRoot,
   configPath,
+  workspaceScope,
   reminderKind: 'proactive',
   intentText: '请按近期训练和健康信号判断是否值得提醒用户做一组轻量活动训练；只有在确实值得提醒时才发送可见消息，不要自动打开页面。',
 });
@@ -1364,6 +1409,72 @@ const getCronJobName = (job) => (
   ?? null
 );
 
+const collectStringLeaves = (value, bucket = []) => {
+  if (typeof value === 'string') {
+    bucket.push(value);
+    return bucket;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      collectStringLeaves(entry, bucket);
+    }
+    return bucket;
+  }
+  if (isRecord(value)) {
+    for (const entry of Object.values(value)) {
+      collectStringLeaves(entry, bucket);
+    }
+  }
+  return bucket;
+};
+
+const buildCronJobSearchText = (job) => collectStringLeaves(job)
+  .join('\n')
+  .replace(/\\\\/g, '/')
+  .replace(/\\/g, '/')
+  .toLowerCase();
+
+const readAutomationState = async (workspacePaths) => {
+  const parsed = await parseJsonFileIfExists(workspacePaths.automationStatePath);
+  return isRecord(parsed) ? parsed : null;
+};
+
+const isOwnedGlobalCronJob = (job, workspacePaths) => {
+  const jobName = getCronJobName(job);
+  if (!jobName || !CLAWCARE_GLOBAL_JOB_NAMES.has(jobName)) {
+    return false;
+  }
+  return buildCronJobSearchText(job).includes(normalizeComparablePath(workspacePaths.configPath));
+};
+
+const isOwnedScopedCronJob = (job, workspacePaths, automationState = null) => {
+  const jobName = getCronJobName(job);
+  if (!jobName) {
+    return false;
+  }
+  const scopedNames = getScopedAutomationJobNames(workspacePaths);
+  if (Object.values(scopedNames).includes(jobName)) {
+    return true;
+  }
+  const searchText = buildCronJobSearchText(job);
+  if (searchText.includes(scopedNames.scopeToken.toLowerCase())) {
+    return true;
+  }
+  if (
+    isRecord(automationState)
+    && typeof automationState.configPath === 'string'
+    && normalizeComparablePath(automationState.configPath) === normalizeComparablePath(workspacePaths.configPath)
+    && isRecord(automationState.jobNames)
+  ) {
+    return Object.values(automationState.jobNames).includes(jobName);
+  }
+  return false;
+};
+
+const findCronJobByNameInJobs = (jobs, name) => (
+  jobs.find((job) => getCronJobName(job) === name) ?? null
+);
+
 export const findCronJobByName = async (name, options = {}) => {
   const jobs = await listCronJobs(options);
   return jobs.find((job) => getCronJobName(job) === name) ?? null;
@@ -1416,7 +1527,7 @@ const buildCommandPreview = (args, options = {}) => {
 };
 
 export const reconcileNamedCronJob = async (spec, options = {}) => {
-  const existing = await findCronJobByName(spec.name, options);
+  const existing = spec.existingJob ?? await findCronJobByName(spec.name, options);
   const args = cronSpecToArgs(spec, existing ? getCronJobId(existing) : null);
   const commandPreview = buildCommandPreview(args, options);
 
@@ -1440,7 +1551,7 @@ export const reconcileNamedCronJob = async (spec, options = {}) => {
 };
 
 export const removeNamedCronJob = async (name, options = {}) => {
-  const existing = await findCronJobByName(name, options);
+  const existing = options.existingJob ?? await findCronJobByName(name, options);
   if (!existing) {
     return {
       action: 'noop',
@@ -1469,6 +1580,21 @@ export const removeNamedCronJob = async (name, options = {}) => {
   }
 };
 
+const removeOwnedGlobalCronJob = async (name, jobs, workspacePaths, options = {}) => {
+  const existing = findCronJobByNameInJobs(jobs, name);
+  if (!existing || !isOwnedGlobalCronJob(existing, workspacePaths)) {
+    return {
+      action: 'noop',
+      deferred: false,
+      command: null,
+    };
+  }
+  return await removeNamedCronJob(name, {
+    ...options,
+    existingJob: existing,
+  });
+};
+
 export const reconcileAutomationJobs = async ({
   config,
   workspacePaths,
@@ -1480,16 +1606,31 @@ export const reconcileAutomationJobs = async ({
     cwd: workspacePaths.workspaceDir,
   };
   const tz = detectTimeZone();
+  const automationState = await readAutomationState(workspacePaths);
+  const jobNames = getScopedAutomationJobNames(workspacePaths);
+  const jobs = await listCronJobs(options);
   const state = {
     dailyPlan: null,
     scheduledReminder: null,
     proactiveReminder: null,
     legacyWorkdayReminder: null,
   };
+  const existingDailyPlan = jobs.find((job) => (
+    getCronJobName(job) === jobNames.dailyPlan
+    && isOwnedScopedCronJob(job, workspacePaths, automationState)
+  )) ?? null;
+  const existingScheduledReminder = jobs.find((job) => (
+    getCronJobName(job) === jobNames.scheduledReminder
+    && isOwnedScopedCronJob(job, workspacePaths, automationState)
+  )) ?? null;
+  const existingProactiveReminder = jobs.find((job) => (
+    getCronJobName(job) === jobNames.proactiveReminder
+    && isOwnedScopedCronJob(job, workspacePaths, automationState)
+  )) ?? null;
 
   if (config.automation.dailyPlan.enabled) {
     state.dailyPlan = await reconcileNamedCronJob({
-      name: CLAWCARE_JOB_NAMES.dailyPlan,
+      name: jobNames.dailyPlan,
       schedule: {
         cron: buildCronExpressionForLocalTime(config.automation.dailyPlan.scheduleLocalTime),
         tz,
@@ -1498,16 +1639,21 @@ export const reconcileAutomationJobs = async ({
       systemEvent: buildDailyPlanSystemEvent({
         skillRoot,
         configPath: workspacePaths.configPath,
+        workspaceScope: jobNames.scopeToken,
       }),
       wake: 'now',
+      existingJob: existingDailyPlan,
     }, options);
   } else {
-    state.dailyPlan = await removeNamedCronJob(CLAWCARE_JOB_NAMES.dailyPlan, options);
+    state.dailyPlan = await removeNamedCronJob(jobNames.dailyPlan, {
+      ...options,
+      existingJob: existingDailyPlan,
+    });
   }
 
   if (config.automation.scheduledReminder.enabled) {
     state.scheduledReminder = await reconcileNamedCronJob({
-      name: CLAWCARE_JOB_NAMES.scheduledReminder,
+      name: jobNames.scheduledReminder,
       schedule: {
         cron: buildCronExpressionForLocalTime(
           config.automation.scheduledReminder.scheduleLocalTime,
@@ -1519,17 +1665,22 @@ export const reconcileAutomationJobs = async ({
       message: buildScheduledReminderMessage({
         skillRoot,
         configPath: workspacePaths.configPath,
+        workspaceScope: jobNames.scopeToken,
       }),
       announce: true,
       channel: 'last',
+      existingJob: existingScheduledReminder,
     }, options);
   } else {
-    state.scheduledReminder = await removeNamedCronJob(CLAWCARE_JOB_NAMES.scheduledReminder, options);
+    state.scheduledReminder = await removeNamedCronJob(jobNames.scheduledReminder, {
+      ...options,
+      existingJob: existingScheduledReminder,
+    });
   }
 
   if (config.automation.proactiveReminder.enabled && config.consent.proactiveReminderExplained) {
     state.proactiveReminder = await reconcileNamedCronJob({
-      name: CLAWCARE_JOB_NAMES.proactiveReminder,
+      name: jobNames.proactiveReminder,
       schedule: {
         cron: buildCronExpressionForLocalTime(
           config.automation.proactiveReminder.scheduleLocalTime,
@@ -1541,19 +1692,39 @@ export const reconcileAutomationJobs = async ({
       message: buildProactiveReminderMessage({
         skillRoot,
         configPath: workspacePaths.configPath,
+        workspaceScope: jobNames.scopeToken,
       }),
       announce: true,
       channel: 'last',
+      existingJob: existingProactiveReminder,
     }, options);
   } else {
-    state.proactiveReminder = await removeNamedCronJob(CLAWCARE_JOB_NAMES.proactiveReminder, options);
+    state.proactiveReminder = await removeNamedCronJob(jobNames.proactiveReminder, {
+      ...options,
+      existingJob: existingProactiveReminder,
+    });
   }
 
-  state.legacyWorkdayReminder = await removeNamedCronJob(CLAWCARE_JOB_NAMES.legacyWorkdayReminder, options);
+  await removeOwnedGlobalCronJob(CLAWCARE_JOB_NAMES.dailyPlan, jobs, workspacePaths, options);
+  await removeOwnedGlobalCronJob(CLAWCARE_JOB_NAMES.scheduledReminder, jobs, workspacePaths, options);
+  await removeOwnedGlobalCronJob(CLAWCARE_JOB_NAMES.proactiveReminder, jobs, workspacePaths, options);
+  state.legacyWorkdayReminder = await removeOwnedGlobalCronJob(
+    CLAWCARE_JOB_NAMES.legacyWorkdayReminder,
+    jobs,
+    workspacePaths,
+    options,
+  );
 
   await writeJsonFile(workspacePaths.automationStatePath, {
     updatedAt: new Date().toISOString(),
     timeZone: tz,
+    configPath: workspacePaths.configPath,
+    workspaceScope: jobNames.scopeToken,
+    jobNames: {
+      dailyPlan: jobNames.dailyPlan,
+      scheduledReminder: jobNames.scheduledReminder,
+      proactiveReminder: jobNames.proactiveReminder,
+    },
     state,
   });
 
