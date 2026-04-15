@@ -2,7 +2,7 @@
 
 ## Local Files
 
-This skill is allowed to maintain only these files:
+The skill may maintain only:
 
 - `~/.openclaw/workspace/clawcare/config.json`
 - `~/.openclaw/workspace/clawcare/cache/daily_plan.json`
@@ -11,38 +11,48 @@ This skill is allowed to maintain only these files:
 - `~/.openclaw/workspace/clawcare/recent_analysis.md`
 - `~/.openclaw/workspace/memory/YYYY-MM-DD.md`
 
-Do not modify `AGENTS.md`, `SOUL.md`, `TOOLS.md`, other skills, or unrelated workspace files.
+Do not touch `AGENTS.md`, `SOUL.md`, `TOOLS.md`, other skills, or unrelated workspace files.
 
 ## Script Roles
 
-- `bootstrap.mjs`: Ensure the local ClawCare workspace exists, normalize config, and reconcile default cron jobs if OpenClaw cron is available.
-- `build_plan.mjs`: Read local ClawCare context, recent run history, `recent_analysis.md`, and recent daily memory summaries; request a personalized plan from `/api/reminders`; cache the latest plan; optionally open the launch URL; and schedule a one-shot follow-up sync.
-- `schedule_sync.mjs`: Create or refresh the one-shot follow-up sync job for a session.
-- `sync_run.mjs`: Pull a completed run from `/api/runs/:id/sync` or `/api/openclaw/history`, write the run record, append the daily memory note, refresh `recent_analysis.md`, and re-index memory.
-- `settings_patch.mjs`: Apply a controlled JSON patch to local config and reconcile related cron jobs.
-- `write_memory.mjs`: Materialize the memory and recent-analysis files from an existing run record or from the sync endpoints.
+- `bootstrap.mjs`: ensure the local ClawCare workspace exists, normalize config, and reconcile cron jobs when the host supports cron.
+- `build_plan.mjs`: read local ClawCare context, recent run history, `recent_analysis.md`, and recent daily memory summaries; request a personalized plan from `/api/reminders`; cache the latest plan; optionally open the launch URL; and schedule follow-up sync.
+- `schedule_sync.mjs`: create or refresh the one-shot follow-up sync job for a session.
+- `sync_run.mjs`: pull a completed run from `/api/runs/:id/sync` or `/api/openclaw/history`, write the run record, append the daily memory note, refresh `recent_analysis.md`, and re-index memory.
+- `settings_patch.mjs`: apply a controlled JSON patch to local config and reconcile cron jobs.
+- `write_memory.mjs`: materialize the memory and recent-analysis files from an existing run record or from the sync endpoints.
+
+## Reminder Modes
+
+- `dailyPlan`: silent background preparation. No visible reminder.
+- `scheduledReminder`: user-requested timed reminder. At trigger time it must produce a visible message with a personalized summary and `launchUrl`.
+- `proactiveReminder`: optional proactive reminder. It may skip delivery when current signals do not justify a reminder.
 
 ## Cron Usage
 
-Use OpenClaw native cron commands only. The skill runtime schedules:
+Use native cron support from the host agent only.
 
-- `clawcare-daily-plan`
-- `clawcare-workday-reminder`
-- `clawcare-followup-sync-<session>`
+- `clawcare-daily-plan` stays in `main` and uses a system event.
+- `clawcare-scheduled-reminder` uses an isolated run with announce delivery to `channel: last`.
+- `clawcare-proactive-reminder` uses an isolated run with announce delivery to `channel: last`.
+- `clawcare-followup-sync-<session>` stays in `main` and uses a one-shot system event.
 
-Recurring jobs should stay in the `main` session and use system events that tell the agent to execute the local skill script via `exec`.
+For isolated reminder runs, the prompt should:
 
-If OpenClaw cron is unavailable, treat cron writes as deferred state, not as a hard failure.
+1. run the local Node script exactly once with `exec`
+2. read the JSON result
+3. reply with `messageText` only
+4. reply with `ANNOUNCE_SKIP` only when the script explicitly returns `announceToken`
 
-Starting training should already schedule the follow-up sync when `automation.postRunSync.enabled` is true. The user should not need to separately ask for memory backfill or sync after every launch.
+If cron is unavailable, treat job registration as deferred state rather than a hard failure.
 
 ## Memory Usage
 
 Every completed sync should:
 
-1. Write or update `runs/<run-id>.json`
-2. Append exactly one block for that run into the current `memory/YYYY-MM-DD.md`
-3. Rewrite `recent_analysis.md`
-4. Best-effort run `openclaw memory index --force`
+1. write or update `runs/<run-id>.json`
+2. append exactly one block for that run into `memory/YYYY-MM-DD.md`
+3. rewrite `recent_analysis.md`
+4. best-effort run `openclaw memory index --force`
 
 Deduplicate by run marker. Repeated syncs must not append duplicate memory blocks.

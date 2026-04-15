@@ -7,12 +7,16 @@ import { fileURLToPath } from 'node:url';
 export const CLAWCARE_DEFAULT_BASE_URL = 'https://clawcare-protocol.vercel.app';
 export const CLAWCARE_DEFAULT_RETURN_TO = 'openclaw://clawcare';
 export const CLAWCARE_NO_REPLY = 'NO_REPLY';
+export const CLAWCARE_ANNOUNCE_SKIP = 'ANNOUNCE_SKIP';
 export const CLAWCARE_FOLLOW_UP_DELAY_MIN = 20;
 export const CLAWCARE_SYNC_RETRY_DELAY_MIN = 10;
 export const CLAWCARE_SYNC_RETRY_COUNT = 1;
+const DEFAULT_WEEKDAYS = [1, 2, 3, 4, 5];
 export const CLAWCARE_JOB_NAMES = {
   dailyPlan: 'clawcare-daily-plan',
-  workdayReminder: 'clawcare-workday-reminder',
+  scheduledReminder: 'clawcare-scheduled-reminder',
+  proactiveReminder: 'clawcare-proactive-reminder',
+  legacyWorkdayReminder: 'clawcare-workday-reminder',
 };
 
 const DEFAULT_CONFIG = {
@@ -29,15 +33,20 @@ const DEFAULT_CONFIG = {
       enabled: true,
       followUpDelayMin: CLAWCARE_FOLLOW_UP_DELAY_MIN,
     },
-    workdayReminder: {
+    scheduledReminder: {
+      enabled: false,
+      scheduleLocalTime: '11:00',
+      weekdays: DEFAULT_WEEKDAYS,
+    },
+    proactiveReminder: {
       enabled: false,
       scheduleLocalTime: '15:00',
-      weekdays: [1, 2, 3, 4, 5],
+      weekdays: DEFAULT_WEEKDAYS,
     },
   },
   consent: {
     disclosureShown: false,
-    workdayReminderExplained: false,
+    proactiveReminderExplained: false,
   },
   openclawContext: {
     goalNote: '',
@@ -81,6 +90,7 @@ const TIME_PATTERN = /^\d{2}:\d{2}$/;
 const VALID_PACE = new Set(['gentle', 'steady', 'brisk']);
 const VALID_FOCUS = new Set(['neck_relief', 'posture_reset', 'stress_relief', 'mobility']);
 const VALID_FAMILIES = new Set(['neck_wake', 'sedentary_activate', 'stress_reset']);
+const VALID_REMINDER_KINDS = new Set(['direct', 'scheduled', 'proactive', 'daily_plan']);
 
 const stripTrailingSlash = (value) => value.replace(/\/+$/, '');
 const isRecord = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -138,6 +148,12 @@ const summarizeText = (text, maxLength = 220) => {
   }
   return `${normalized.slice(0, maxLength - 3)}...`;
 };
+
+const normalizeReminderKind = (value) => (
+  VALID_REMINDER_KINDS.has(String(value ?? '').trim())
+    ? String(value).trim()
+    : 'direct'
+);
 
 const parseMaybeInt = (value, fallback) => {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -292,7 +308,7 @@ const normalizeScheduleLocalTime = (value, fallback) => (
 const normalizeWeekdays = (value) => {
   const source = Array.isArray(value)
     ? value
-    : DEFAULT_CONFIG.automation.workdayReminder.weekdays;
+    : DEFAULT_WEEKDAYS;
   return Array.from(new Set(
     source
       .map((entry) => Number.parseInt(String(entry), 10))
@@ -364,13 +380,19 @@ const normalizePersonalizationSignals = (value) => {
 export const normalizeConfig = (rawConfig = {}, workspacePaths = resolveWorkspacePaths()) => {
   const source = isRecord(rawConfig) ? rawConfig : {};
   const automation = isRecord(source.automation) ? source.automation : {};
-  const legacyReminder = isRecord(automation.sedentaryBreak) ? automation.sedentaryBreak : {};
-  const workdayReminder = isRecord(automation.workdayReminder)
-    ? automation.workdayReminder
-    : legacyReminder;
+  const legacyScheduledReminder = isRecord(automation.workdayReminder) ? automation.workdayReminder : {};
+  const legacyProactiveReminder = isRecord(automation.sedentaryBreak) ? automation.sedentaryBreak : {};
+  const scheduledReminder = isRecord(automation.scheduledReminder)
+    ? deepMerge(automation.scheduledReminder, legacyScheduledReminder)
+    : legacyScheduledReminder;
+  const proactiveReminder = isRecord(automation.proactiveReminder)
+    ? deepMerge(automation.proactiveReminder, legacyProactiveReminder)
+    : legacyProactiveReminder;
   const postRunSync = isRecord(automation.postRunSync) ? automation.postRunSync : {};
   const consent = isRecord(source.consent) ? source.consent : {};
   const workState = isRecord(source.workState) ? source.workState : {};
+  const legacyDailyNotify = automation.dailyPlan?.mode === 'notify'
+    || parseBooleanValue(automation.dailyPlan?.autoOpen, false);
 
   return {
     baseUrl: typeof source.baseUrl === 'string' && source.baseUrl.trim()
@@ -389,11 +411,8 @@ export const normalizeConfig = (rawConfig = {}, workspacePaths = resolveWorkspac
           automation.dailyPlan?.scheduleLocalTime,
           DEFAULT_CONFIG.automation.dailyPlan.scheduleLocalTime,
         ),
-        mode: automation.dailyPlan?.mode === 'notify' ? 'notify' : 'silent_prepare',
-        autoOpen: parseBooleanValue(
-          automation.dailyPlan?.autoOpen,
-          DEFAULT_CONFIG.automation.dailyPlan.autoOpen,
-        ),
+        mode: 'silent_prepare',
+        autoOpen: false,
       },
       postRunSync: {
         enabled: parseBooleanValue(
@@ -408,16 +427,27 @@ export const normalizeConfig = (rawConfig = {}, workspacePaths = resolveWorkspac
           ),
         ),
       },
-      workdayReminder: {
+      scheduledReminder: {
         enabled: parseBooleanValue(
-          workdayReminder.enabled,
-          DEFAULT_CONFIG.automation.workdayReminder.enabled,
+          scheduledReminder.enabled ?? (legacyDailyNotify ? true : undefined),
+          DEFAULT_CONFIG.automation.scheduledReminder.enabled,
         ),
         scheduleLocalTime: normalizeScheduleLocalTime(
-          workdayReminder.scheduleLocalTime,
-          DEFAULT_CONFIG.automation.workdayReminder.scheduleLocalTime,
+          scheduledReminder.scheduleLocalTime ?? (legacyDailyNotify ? automation.dailyPlan?.scheduleLocalTime : undefined),
+          DEFAULT_CONFIG.automation.scheduledReminder.scheduleLocalTime,
         ),
-        weekdays: normalizeWeekdays(workdayReminder.weekdays),
+        weekdays: normalizeWeekdays(scheduledReminder.weekdays),
+      },
+      proactiveReminder: {
+        enabled: parseBooleanValue(
+          proactiveReminder.enabled,
+          DEFAULT_CONFIG.automation.proactiveReminder.enabled,
+        ),
+        scheduleLocalTime: normalizeScheduleLocalTime(
+          proactiveReminder.scheduleLocalTime,
+          DEFAULT_CONFIG.automation.proactiveReminder.scheduleLocalTime,
+        ),
+        weekdays: normalizeWeekdays(proactiveReminder.weekdays),
       },
     },
     consent: {
@@ -425,9 +455,13 @@ export const normalizeConfig = (rawConfig = {}, workspacePaths = resolveWorkspac
         consent.disclosureShown,
         DEFAULT_CONFIG.consent.disclosureShown,
       ),
-      workdayReminderExplained: parseBooleanValue(
-        consent.workdayReminderExplained ?? consent.sedentaryTrackingExplained,
-        DEFAULT_CONFIG.consent.workdayReminderExplained,
+      proactiveReminderExplained: parseBooleanValue(
+        Object.prototype.hasOwnProperty.call(consent, 'workdayReminderExplained')
+          ? consent.workdayReminderExplained
+          : Object.prototype.hasOwnProperty.call(consent, 'sedentaryTrackingExplained')
+            ? consent.sedentaryTrackingExplained
+            : consent.proactiveReminderExplained,
+        DEFAULT_CONFIG.consent.proactiveReminderExplained,
       ),
     },
     openclawContext: normalizeOpenclawContext(source.openclawContext),
@@ -476,7 +510,7 @@ export const writeConfig = async (configPath, config) => {
 };
 
 const buildBootstrapDisclosure = () => (
-  'ClawCare \u5df2\u6309\u9ed8\u8ba4\u95ed\u73af\u51c6\u5907\u5b8c\u6210\uff1a\u542f\u52a8\u8bad\u7ec3\u65f6\u4f1a\u81ea\u52a8\u7ed3\u5408\u672c\u5730\u8bad\u7ec3\u5386\u53f2\u3001recent_analysis \u548c\u6700\u8fd1\u7684\u8bb0\u5fc6\u6458\u8981\u751f\u6210\u4e2a\u6027\u5316\u65b9\u6848\uff1b\u8bad\u7ec3\u540e\u4f1a\u81ea\u52a8\u5b89\u6392\u56de\u6d41\u5199\u5165\u8bad\u7ec3\u8bb0\u5f55\u3001recent_analysis \u548c\u5f53\u5929\u8bb0\u5fc6\u3002\u4e3b\u52a8\u63d0\u9192\u9ed8\u8ba4\u5173\u95ed\uff0c\u53ea\u6709\u4f60\u660e\u786e\u8981\u6c42\u540e\u624d\u4f1a\u5f00\u542f\uff0c\u800c\u4e14\u4e0d\u4f1a\u8bfb\u53d6\u5c4f\u5e55\u3001\u8f93\u5165\u5185\u5bb9\u6216\u6444\u50cf\u5934\u753b\u9762\u3002'
+  'ClawCare 已准备好：启动训练会自动结合本地训练记录、recent_analysis 和最近记忆生成个性化方案，训练后会自动回写记录。你主动设置的定时提醒会直接生效；OpenClaw 自主提醒默认关闭，只有你明确开启后才会发送，而且不会读取屏幕、输入内容或相机画面。'
 );
 
 export const ensureBootstrap = async (options = {}) => {
@@ -520,7 +554,7 @@ export const buildDailyPlanShouldOpen = (config, flags = {}) => {
   if (flags.forceOpen) {
     return true;
   }
-  return config.automation.dailyPlan.mode === 'notify' && Boolean(config.automation.dailyPlan.autoOpen);
+  return false;
 };
 
 const computeNowSignals = (now = new Date()) => {
@@ -679,7 +713,7 @@ export const collectMemorySignals = async (memoryDir) => {
   }
 };
 
-export const buildPlanPayload = async (
+export const collectPlanContext = async (
   config,
   workspacePaths,
   options = {},
@@ -696,7 +730,11 @@ export const buildPlanPayload = async (
   const nowSignals = computeNowSignals(options.now instanceof Date ? options.now : new Date());
   const workState = compactObject({
     workModeEnabled: config.workState.workModeEnabled,
-    sedentaryReminderEnabled: config.workState.reminderEnabled && config.consent.workdayReminderExplained,
+    proactiveReminderEnabled: (
+      config.workState.reminderEnabled
+      && config.automation.proactiveReminder.enabled
+      && config.consent.proactiveReminderExplained
+    ),
     continuousActiveMinutes: config.workState.continuousActiveMinutes,
     lastBreakAt: config.workState.lastBreakAt || undefined,
     sedentaryLevel: buildSedentaryLevel(config.workState),
@@ -711,16 +749,69 @@ export const buildPlanPayload = async (
     rawText: options.intentText?.trim() || undefined,
   });
 
-  return compactObject({
-    baseUrl: options.baseUrl ?? config.baseUrl,
-    return_to: options.returnTo ?? config.returnTo,
-    openclawContext: config.openclawContext,
-    userIntent,
-    personalizationSignals,
+  return {
+    payload: compactObject({
+      baseUrl: options.baseUrl ?? config.baseUrl,
+      return_to: options.returnTo ?? config.returnTo,
+      openclawContext: config.openclawContext,
+      userIntent,
+      personalizationSignals,
+      recentRuns,
+      memorySignals,
+      selfReport: recentAnalysis.selfReport,
+    }),
+    recentAnalysis,
     recentRuns,
+    history,
     memorySignals,
-    selfReport: recentAnalysis.selfReport,
-  });
+    workState,
+    nowSignals,
+    records,
+  };
+};
+
+export const buildPlanPayload = async (
+  config,
+  workspacePaths,
+  options = {},
+) => (await collectPlanContext(config, workspacePaths, options)).payload;
+
+export const evaluateProactiveReminder = (planContext) => {
+  const daysSinceLastRun = Number.isFinite(planContext?.history?.daysSinceLastRun)
+    ? planContext.history.daysSinceLastRun
+    : undefined;
+  const lastTraining = isRecord(planContext?.recentAnalysis?.payload?.lastTraining)
+    ? planContext.recentAnalysis.payload.lastTraining
+    : {};
+  const warnings = Array.isArray(lastTraining.warnings) ? lastTraining.warnings : [];
+  const conflicts = Array.isArray(lastTraining.conflicts) ? lastTraining.conflicts : [];
+
+  if (!Array.isArray(planContext?.recentRuns) || planContext.recentRuns.length === 0) {
+    return {
+      shouldAnnounce: true,
+      reasonCode: 'no_recent_runs',
+      reasonText: '最近还没有训练记录',
+    };
+  }
+  if ((daysSinceLastRun ?? 0) >= 3) {
+    return {
+      shouldAnnounce: true,
+      reasonCode: 'inactive_for_days',
+      reasonText: `已经 ${daysSinceLastRun} 天没有训练了`,
+    };
+  }
+  if ((warnings.length > 0 || conflicts.length > 0) && (daysSinceLastRun ?? 0) >= 1) {
+    return {
+      shouldAnnounce: true,
+      reasonCode: 'recent_caution_signals',
+      reasonText: '最近训练里有需要留意的信号',
+    };
+  }
+  return {
+    shouldAnnounce: false,
+    reasonCode: 'recently_active',
+    reasonText: '最近已经有训练或活动安排',
+  };
 };
 
 export const getApiBaseCandidates = (...values) => uniqueStrings(
@@ -1110,19 +1201,17 @@ const buildCronSystemEvent = (action, payload) => [
 export const buildDailyPlanSystemEvent = ({
   skillRoot,
   configPath,
-  mode,
 }) => buildCronSystemEvent('daily-plan', {
   script: path.join(skillRoot, 'scripts', 'build_plan.mjs'),
   args: [
     '--config',
     configPath,
     '--intent',
-    mode === 'notify'
-      ? '\u8bf7\u51c6\u5907\u4eca\u5929\u7684 ClawCare \u8bad\u7ec3\uff0c\u5e76\u81ea\u52a8\u7ed3\u5408\u672c\u5730\u8bb0\u5fc6\u3001recent_analysis \u548c\u6700\u8fd1\u8bad\u7ec3\u8bb0\u5f55\u751f\u6210\u4e2a\u6027\u5316\u65b9\u6848\uff1b\u5728\u5408\u9002\u65f6\u63d0\u9192\u6211\u5f00\u59cb\u3002'
-      : '\u8bf7\u9759\u9ed8\u51c6\u5907\u4eca\u5929\u7684 ClawCare \u8bad\u7ec3\uff0c\u5e76\u81ea\u52a8\u7ed3\u5408\u672c\u5730\u8bb0\u5fc6\u3001recent_analysis \u548c\u6700\u8fd1\u8bad\u7ec3\u8bb0\u5f55\u751f\u6210\u4e2a\u6027\u5316\u65b9\u6848\uff1b\u4e0d\u8981\u4e3b\u52a8\u6253\u5f00\u9875\u9762\u3002',
-    mode === 'notify' ? '--open' : '--no-open',
+    '请静默准备今天的 ClawCare 训练，并自动结合本地记忆、recent_analysis 和最近训练记录生成个性化方案，不要主动打开页面。',
+    '--reminder-kind',
+    'daily_plan',
+    '--no-open',
   ],
-  mode,
 });
 
 export const buildFollowUpSyncSystemEvent = ({
@@ -1146,19 +1235,54 @@ export const buildFollowUpSyncSystemEvent = ({
   sessionId,
 });
 
-export const buildWorkdayReminderSystemEvent = ({
+const buildReminderTurnMessage = ({
   skillRoot,
   configPath,
-}) => buildCronSystemEvent('workday-reminder', {
-  script: path.join(skillRoot, 'scripts', 'build_plan.mjs'),
-  args: [
-    '--config',
-    configPath,
-    '--intent',
-    '\u8bf7\u6309\u5de5\u4f5c\u65e5\u8212\u5c55\u63d0\u9192\u51c6\u5907\u4e00\u7248\u504f\u8f7b\u7684\u9888\u80a9\u653e\u677e\u8bad\u7ec3\uff0c\u5e76\u81ea\u52a8\u7ed3\u5408\u672c\u5730\u8bb0\u5fc6\u3001recent_analysis \u548c\u6700\u8fd1\u8bad\u7ec3\u8bb0\u5f55\u751f\u6210\u4e2a\u6027\u5316\u65b9\u6848\u3002\u6ce8\u610f\u8fd9\u53ea\u662f\u65f6\u95f4\u578b\u63d0\u9192\uff0c\u4e0d\u4ee3\u8868\u4efb\u4f55\u884c\u4e3a\u76d1\u6d4b\u3002',
-    '--no-open',
-  ],
-  reminderType: 'time_boxed_workday',
+  reminderKind,
+  intentText,
+}) => [
+  `ClawCare reminder run: ${reminderKind}.`,
+  'Use the installed `clawcare-protocol` skill.',
+  'Use the `exec` tool to run the local Node script below exactly once.',
+  'Read the JSON stdout.',
+  `If the result contains "announceToken", reply with ${CLAWCARE_ANNOUNCE_SKIP} exactly.`,
+  'Otherwise reply with the field "messageText" only.',
+  'Do not open the page, do not output JSON, and do not add extra explanation.',
+  '',
+  '```json',
+  stableStringify({
+    script: path.join(skillRoot, 'scripts', 'build_plan.mjs'),
+    args: [
+      '--config',
+      configPath,
+      '--intent',
+      intentText,
+      '--reminder-kind',
+      reminderKind,
+      '--no-open',
+    ],
+  }),
+  '```',
+].join('\n');
+
+export const buildScheduledReminderMessage = ({
+  skillRoot,
+  configPath,
+}) => buildReminderTurnMessage({
+  skillRoot,
+  configPath,
+  reminderKind: 'scheduled',
+  intentText: '请准备一版适合当前状态的轻量颈肩活动训练，用于定时提醒消息。不要自动打开页面。',
+});
+
+export const buildProactiveReminderMessage = ({
+  skillRoot,
+  configPath,
+}) => buildReminderTurnMessage({
+  skillRoot,
+  configPath,
+  reminderKind: 'proactive',
+  intentText: '请按近期训练和健康信号判断是否值得提醒用户做一组轻量活动训练；只有在确实值得提醒时才发送可见消息，不要自动打开页面。',
 });
 
 const resolveOpenClawCommand = (openclawBin) => (
@@ -1268,6 +1392,15 @@ const cronSpecToArgs = (spec, existingJobId = null) => {
   if (spec.message) {
     base.push('--message', spec.message);
   }
+  if (spec.announce) {
+    base.push('--announce');
+  }
+  if (spec.channel) {
+    base.push('--channel', spec.channel);
+  }
+  if (spec.to) {
+    base.push('--to', spec.to);
+  }
   if (spec.wake) {
     base.push('--wake', spec.wake);
   }
@@ -1349,7 +1482,9 @@ export const reconcileAutomationJobs = async ({
   const tz = detectTimeZone();
   const state = {
     dailyPlan: null,
-    workdayReminder: null,
+    scheduledReminder: null,
+    proactiveReminder: null,
+    legacyWorkdayReminder: null,
   };
 
   if (config.automation.dailyPlan.enabled) {
@@ -1363,7 +1498,6 @@ export const reconcileAutomationJobs = async ({
       systemEvent: buildDailyPlanSystemEvent({
         skillRoot,
         configPath: workspacePaths.configPath,
-        mode: config.automation.dailyPlan.mode,
       }),
       wake: 'now',
     }, options);
@@ -1371,26 +1505,51 @@ export const reconcileAutomationJobs = async ({
     state.dailyPlan = await removeNamedCronJob(CLAWCARE_JOB_NAMES.dailyPlan, options);
   }
 
-  if (config.automation.workdayReminder.enabled && config.consent.workdayReminderExplained) {
-    state.workdayReminder = await reconcileNamedCronJob({
-      name: CLAWCARE_JOB_NAMES.workdayReminder,
+  if (config.automation.scheduledReminder.enabled) {
+    state.scheduledReminder = await reconcileNamedCronJob({
+      name: CLAWCARE_JOB_NAMES.scheduledReminder,
       schedule: {
         cron: buildCronExpressionForLocalTime(
-          config.automation.workdayReminder.scheduleLocalTime,
-          config.automation.workdayReminder.weekdays,
+          config.automation.scheduledReminder.scheduleLocalTime,
+          config.automation.scheduledReminder.weekdays,
         ),
         tz,
       },
-      session: 'main',
-      systemEvent: buildWorkdayReminderSystemEvent({
+      session: 'isolated',
+      message: buildScheduledReminderMessage({
         skillRoot,
         configPath: workspacePaths.configPath,
       }),
-      wake: 'now',
+      announce: true,
+      channel: 'last',
     }, options);
   } else {
-    state.workdayReminder = await removeNamedCronJob(CLAWCARE_JOB_NAMES.workdayReminder, options);
+    state.scheduledReminder = await removeNamedCronJob(CLAWCARE_JOB_NAMES.scheduledReminder, options);
   }
+
+  if (config.automation.proactiveReminder.enabled && config.consent.proactiveReminderExplained) {
+    state.proactiveReminder = await reconcileNamedCronJob({
+      name: CLAWCARE_JOB_NAMES.proactiveReminder,
+      schedule: {
+        cron: buildCronExpressionForLocalTime(
+          config.automation.proactiveReminder.scheduleLocalTime,
+          config.automation.proactiveReminder.weekdays,
+        ),
+        tz,
+      },
+      session: 'isolated',
+      message: buildProactiveReminderMessage({
+        skillRoot,
+        configPath: workspacePaths.configPath,
+      }),
+      announce: true,
+      channel: 'last',
+    }, options);
+  } else {
+    state.proactiveReminder = await removeNamedCronJob(CLAWCARE_JOB_NAMES.proactiveReminder, options);
+  }
+
+  state.legacyWorkdayReminder = await removeNamedCronJob(CLAWCARE_JOB_NAMES.legacyWorkdayReminder, options);
 
   await writeJsonFile(workspacePaths.automationStatePath, {
     updatedAt: new Date().toISOString(),
@@ -1471,10 +1630,22 @@ const validatePatch = (patch, prefix = '') => {
     if (!prefix && !ALLOWED_PATCH_KEYS.has(key)) {
       throw new Error(`patch_key_not_allowed:${key}`);
     }
-    if (prefix === 'automation' && !['dailyPlan', 'postRunSync', 'workdayReminder'].includes(key)) {
+    if (prefix === 'automation' && ![
+      'dailyPlan',
+      'postRunSync',
+      'scheduledReminder',
+      'proactiveReminder',
+      'workdayReminder',
+      'sedentaryBreak',
+    ].includes(key)) {
       throw new Error(`patch_key_not_allowed:${nextPrefix}`);
     }
-    if (prefix === 'consent' && !['disclosureShown', 'workdayReminderExplained'].includes(key)) {
+    if (prefix === 'consent' && ![
+      'disclosureShown',
+      'proactiveReminderExplained',
+      'workdayReminderExplained',
+      'sedentaryTrackingExplained',
+    ].includes(key)) {
       throw new Error(`patch_key_not_allowed:${nextPrefix}`);
     }
     if (prefix === 'personalizationSignals' && !['preferences', 'questionnaire', 'health', 'weather'].includes(key)) {
@@ -1541,12 +1712,73 @@ export const parsePatchInput = async (args) => {
   throw new Error('missing_patch_input');
 };
 
+const buildReminderMessageText = ({
+  reminderPlan,
+  reminderKind = 'direct',
+  proactiveDecision,
+}) => {
+  const reminder = isRecord(reminderPlan?.reminder) ? reminderPlan.reminder : {};
+  const launchUrl = reminderPlan?.session?.launch_url ?? reminder.launch_url ?? '';
+  const summary = summarizeText(
+    reminder.summary
+      ?? reminder.body
+      ?? reminder.title
+      ?? '已为你准备一组适合当前状态的训练。',
+    120,
+  );
+  const warning = summarizeText(
+    Array.isArray(reminder.warnings) && reminder.warnings.length > 0
+      ? reminder.warnings[0]
+      : Array.isArray(reminder.conflicts) && reminder.conflicts.length > 0
+        ? reminder.conflicts[0]
+        : '',
+    48,
+  );
+  const opening = reminderKind === 'scheduled'
+    ? '到时间活动一下了。'
+    : reminderKind === 'proactive'
+      ? proactiveDecision?.reasonText
+        ? `${proactiveDecision.reasonText}，可以安排一组轻量活动。`
+        : '现在适合安排一组轻量活动。'
+      : reminder.title?.trim() || '已为你准备好今天的训练。';
+
+  const lines = [
+    opening,
+    `这次更适合你当前状态：${summary}`,
+  ];
+  if (warning) {
+    lines.push(`开始前注意：${warning}`);
+  }
+  if (launchUrl) {
+    lines.push(`打开训练：${launchUrl}`);
+  }
+  return lines.join('\n');
+};
+
+export const buildSkippedBuildPlanResult = ({
+  bootstrap,
+  reminderKind,
+  proactiveDecision,
+}) => ({
+  status: 'skipped',
+  reminderKind: normalizeReminderKind(reminderKind),
+  configPath: bootstrap.workspacePaths.configPath,
+  bootstrapDisclosure: bootstrap.bootstrapDisclosure,
+  disclosurePending: bootstrap.disclosurePending,
+  announceToken: CLAWCARE_ANNOUNCE_SKIP,
+  shouldAnnounce: false,
+  reasonCode: proactiveDecision?.reasonCode ?? 'skip',
+  reasonText: proactiveDecision?.reasonText ?? '当前不需要发送提醒',
+});
+
 export const buildBuildPlanResult = ({
   bootstrap,
   reminderPlan,
   cachePath,
   followUpSync,
   opened,
+  reminderKind = 'direct',
+  proactiveDecision,
 }) => ({
   status: 'ok',
   apiBase: reminderPlan.apiBase,
@@ -1556,6 +1788,10 @@ export const buildBuildPlanResult = ({
   protocolFamily: reminderPlan.session.protocol_family,
   launchUrl: reminderPlan.session.launch_url,
   reminderId: reminderPlan.reminder.reminder_id,
+  title: reminderPlan.reminder.title,
+  summary: reminderPlan.reminder.summary,
+  body: reminderPlan.reminder.body,
+  protocolTitle: reminderPlan.reminder.protocol_title,
   recommendedIntensity: reminderPlan.reminder.recommended_intensity,
   requestedIntensity: reminderPlan.reminder.requested_intensity,
   warnings: reminderPlan.reminder.warnings ?? [],
@@ -1564,4 +1800,11 @@ export const buildBuildPlanResult = ({
   disclosurePending: bootstrap.disclosurePending,
   opened,
   followUpSync,
+  reminderKind: normalizeReminderKind(reminderKind),
+  shouldAnnounce: true,
+  messageText: buildReminderMessageText({
+    reminderPlan,
+    reminderKind,
+    proactiveDecision,
+  }),
 });

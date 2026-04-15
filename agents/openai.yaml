@@ -1,6 +1,6 @@
 interface:
   display_name: "ClawCare Protocol"
-  short_description: "Launch and sync personalized ClawCare routines"
+  short_description: "Start ClawCare plans, reminders, and sync"
   icon_large: "./assets/clawcare-mark.svg"
   brand_color: "#0F766E"
-  default_prompt: "Use $clawcare_protocol to start or manage a personalized ClawCare routine inside OpenClaw."
+  default_prompt: "Use $clawcare_protocol to start ClawCare training, set a reminder, or sync a finished run."

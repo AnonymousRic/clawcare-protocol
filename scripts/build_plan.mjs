@@ -1,9 +1,11 @@
 import {
   buildBuildPlanResult,
+  buildSkippedBuildPlanResult,
   buildDailyPlanShouldOpen,
-  buildPlanPayload,
   cacheDailyPlan,
+  collectPlanContext,
   ensureBootstrap,
+  evaluateProactiveReminder,
   getApiBaseCandidates,
   hasFlag,
   openUrl,
@@ -17,18 +19,35 @@ export const main = async (args = process.argv.slice(2)) => {
   const configPath = parseFlagValue(args, '--config');
   const openclawBin = parseFlagValue(args, '--openclaw-bin');
   const intentText = parseFlagValue(args, '--intent');
+  const reminderKind = parseFlagValue(args, '--reminder-kind');
   const baseUrl = parseFlagValue(args, '--base');
   const returnTo = parseFlagValue(args, '--return-to');
   const bootstrap = await ensureBootstrap({
     configPath,
     markDisclosureShown: true,
   });
-  const payload = await buildPlanPayload(bootstrap.config, bootstrap.workspacePaths, {
+  const planContext = await collectPlanContext(bootstrap.config, bootstrap.workspacePaths, {
     intentText,
     baseUrl,
     returnTo,
   });
-  const reminderPlan = await requestReminderPlan(payload, getApiBaseCandidates(baseUrl ?? bootstrap.config.baseUrl));
+  const proactiveDecision = reminderKind === 'proactive'
+    ? evaluateProactiveReminder(planContext)
+    : null;
+
+  if (reminderKind === 'proactive' && proactiveDecision && !proactiveDecision.shouldAnnounce) {
+    console.log(JSON.stringify(buildSkippedBuildPlanResult({
+      bootstrap,
+      reminderKind,
+      proactiveDecision,
+    }), null, 2));
+    return;
+  }
+
+  const reminderPlan = await requestReminderPlan(
+    planContext.payload,
+    getApiBaseCandidates(baseUrl ?? bootstrap.config.baseUrl),
+  );
   const cachePath = await cacheDailyPlan(bootstrap.workspacePaths, reminderPlan);
   const skillRoot = resolveSkillRoot(import.meta.url);
   const opened = buildDailyPlanShouldOpen(bootstrap.config, {
@@ -57,6 +76,8 @@ export const main = async (args = process.argv.slice(2)) => {
     cachePath,
     followUpSync,
     opened,
+    reminderKind,
+    proactiveDecision,
   }), null, 2));
 };
 

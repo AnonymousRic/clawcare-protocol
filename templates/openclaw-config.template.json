@@ -12,7 +12,12 @@
       "enabled": true,
       "followUpDelayMin": 20
     },
-    "workdayReminder": {
+    "scheduledReminder": {
+      "enabled": false,
+      "scheduleLocalTime": "11:00",
+      "weekdays": [1, 2, 3, 4, 5]
+    },
+    "proactiveReminder": {
       "enabled": false,
       "scheduleLocalTime": "15:00",
       "weekdays": [1, 2, 3, 4, 5]
@@ -20,7 +25,7 @@
   },
   "consent": {
     "disclosureShown": false,
-    "workdayReminderExplained": false
+    "proactiveReminderExplained": false
   },
   "openclawContext": {
     "goalNote": "",
