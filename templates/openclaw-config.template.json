@@ -3,7 +3,7 @@
   "returnTo": "openclaw://clawcare",
   "automation": {
     "dailyPlan": {
-      "enabled": false,
+      "enabled": true,
       "scheduleLocalTime": "09:00",
       "mode": "silent_prepare",
       "autoOpen": false
@@ -28,6 +28,7 @@
     "proactiveReminderExplained": false
   },
   "openclawContext": {
+    "goalNote": "",
     "preferredFamilies": [],
     "avoidActionTypes": [],
     "bodyLimits": []
@@ -50,6 +51,7 @@
       "energyBucket": "mid"
     },
     "weather": {
+      "condition": "",
       "severity": "normal"
     }
   },

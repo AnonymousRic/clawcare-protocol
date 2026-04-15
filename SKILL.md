@@ -25,8 +25,6 @@ node {baseDir}/scripts/bootstrap.mjs
 
 If the result includes `disclosurePending: true` and `bootstrapDisclosure`, say that disclosure once in natural Chinese, then continue.
 
-Fresh install should stay light: do not imply that a recurring `dailyPlan` is enabled unless the stored config actually enables it.
-
 ## Training Loop
 
 When the user wants to start training:
@@ -48,7 +46,7 @@ If the script returns `status: "pending"`, explain only that the result is not r
 
 ## Reminder Types
 
-- `dailyPlan`: silent preparation only. It never becomes a visible reminder, and it stays off by default on fresh install.
+- `dailyPlan`: silent preparation only. It never becomes a visible reminder.
 - `scheduledReminder`: the user explicitly asked for a timed reminder. The request itself is confirmation. Do not ask for a second confirmation.
 - `proactiveReminder`: OpenClaw may proactively remind the user based on recent training or health signals. This stays off by default and needs a clear opt-in before long-term enablement.
 
@@ -84,7 +82,6 @@ Only write long-term settings when the user clearly means “以后 / 默认 / �
 
 - Visible reminders should follow the host agent's native routing model.
 - In OpenClaw, recurring reminders should use isolated cron runs and announce back to the last visible route.
-- Recurring ClawCare cron names are scoped to the current workspace. Do not assume a global shared cron name.
 - Do not hard-code Feishu, WeChat, Telegram, or any other external app in the skill.
 - If the host cannot guarantee a visible outbound route, do not pretend that external delivery is active. Say only what is true.
 

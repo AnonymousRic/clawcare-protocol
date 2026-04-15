@@ -14,6 +14,7 @@ import {
   resolveSkillRoot,
   scheduleFollowUpSyncJob,
 } from './lib/runtime.mjs';
+import { requestReminderPreparationWithFallback } from './lib/reminder_prepare.mjs';
 
 export const main = async (args = process.argv.slice(2)) => {
   const configPath = parseFlagValue(args, '--config');
@@ -44,27 +45,43 @@ export const main = async (args = process.argv.slice(2)) => {
     return;
   }
 
-  const reminderPlan = await requestReminderPlan(
-    planContext.payload,
-    getApiBaseCandidates(baseUrl ?? bootstrap.config.baseUrl),
-  );
+  const prepareOnly = reminderKind === 'scheduled'
+    || reminderKind === 'proactive'
+    || reminderKind === 'daily_plan';
+  const apiBaseCandidates = getApiBaseCandidates(baseUrl ?? bootstrap.config.baseUrl);
+  const reminderPlan = prepareOnly
+    ? await requestReminderPreparationWithFallback({
+      payload: planContext.payload,
+      baseCandidates: apiBaseCandidates,
+      reminderKind,
+      proactiveDecision,
+    })
+    : await requestReminderPlan(
+      planContext.payload,
+      apiBaseCandidates,
+    );
   const cachePath = await cacheDailyPlan(bootstrap.workspacePaths, reminderPlan);
   const skillRoot = resolveSkillRoot(import.meta.url);
   const opened = buildDailyPlanShouldOpen(bootstrap.config, {
     forceOpen: hasFlag(args, '--open'),
     forceNoOpen: hasFlag(args, '--no-open'),
   });
-  if (opened) {
-    await openUrl(reminderPlan.session.launch_url);
+  const launchUrl = reminderPlan.session?.launch_url ?? reminderPlan.reminder?.launch_url;
+  if (opened && launchUrl) {
+    await openUrl(launchUrl);
   }
 
   let followUpSync = null;
-  if (bootstrap.config.automation.postRunSync.enabled) {
+  if (
+    !prepareOnly
+    && bootstrap.config.automation.postRunSync.enabled
+    && reminderPlan.session?.session_id
+  ) {
     followUpSync = await scheduleFollowUpSyncJob({
       config: bootstrap.config,
       workspacePaths: bootstrap.workspacePaths,
       skillRoot,
-      sessionId: reminderPlan.session.session_id,
+      sessionId: reminderPlan.session?.session_id,
       delayMin: Number.parseInt(parseFlagValue(args, '--delay-min') ?? '', 10) || undefined,
       openclawBin,
     });
