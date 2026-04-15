@@ -10,11 +10,11 @@ import {
   hasFlag,
   openUrl,
   parseFlagValue,
+  requestReminderPreparationWithFallback,
   requestReminderPlan,
   resolveSkillRoot,
   scheduleFollowUpSyncJob,
 } from './lib/runtime.mjs';
-import { requestReminderPreparationWithFallback } from './lib/reminder_prepare.mjs';
 
 export const main = async (args = process.argv.slice(2)) => {
   const configPath = parseFlagValue(args, '--config');
@@ -62,15 +62,6 @@ export const main = async (args = process.argv.slice(2)) => {
     );
   const cachePath = await cacheDailyPlan(bootstrap.workspacePaths, reminderPlan);
   const skillRoot = resolveSkillRoot(import.meta.url);
-  const opened = buildDailyPlanShouldOpen(bootstrap.config, {
-    forceOpen: hasFlag(args, '--open'),
-    forceNoOpen: hasFlag(args, '--no-open'),
-  });
-  const launchUrl = reminderPlan.session?.launch_url ?? reminderPlan.reminder?.launch_url;
-  if (opened && launchUrl) {
-    await openUrl(launchUrl);
-  }
-
   let followUpSync = null;
   if (
     !prepareOnly
@@ -81,21 +72,34 @@ export const main = async (args = process.argv.slice(2)) => {
       config: bootstrap.config,
       workspacePaths: bootstrap.workspacePaths,
       skillRoot,
-      sessionId: reminderPlan.session?.session_id,
+      sessionId: reminderPlan.session.session_id,
       delayMin: Number.parseInt(parseFlagValue(args, '--delay-min') ?? '', 10) || undefined,
       openclawBin,
     });
   }
 
-  console.log(JSON.stringify(buildBuildPlanResult({
+  const opened = buildDailyPlanShouldOpen(bootstrap.config, {
+    forceOpen: hasFlag(args, '--open'),
+    forceNoOpen: hasFlag(args, '--no-open'),
+  });
+  const result = buildBuildPlanResult({
     bootstrap,
     reminderPlan,
     cachePath,
     followUpSync,
-    opened,
+    opened: false,
     reminderKind,
     proactiveDecision,
-  }), null, 2));
+  });
+
+  if (opened && result.launchUrl) {
+    await openUrl(result.launchUrl);
+  }
+
+  console.log(JSON.stringify({
+    ...result,
+    opened,
+  }, null, 2));
 };
 
 void main().catch((error) => {

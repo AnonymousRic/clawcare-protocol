@@ -35,8 +35,19 @@ When the user wants to start training:
 2. Treat the returned plan as personalized by default. The script already reads local run history, `recent_analysis.md`, and recent daily memory summaries.
 3. Explain the returned `summary` briefly in natural Chinese.
 4. Open the returned `launchUrl` only when the user is ready, or when the user explicitly asked to start now.
-5. If the result includes `followUpSync`, treat it as the default post-run sync arrangement. Do not ask again unless the user is changing long-term settings.
+5. If the result includes `followUpSync`, treat it as the default post-run sync arrangement. This usually appears in direct start flows, not in timed reminder delivery.
 6. Do not expose internal field names, JSON keys, API paths, or storage details.
+
+When the request is a reminder activation, not a new reminder:
+
+- If the request asks to activate a prepared reminder, or the host opens a ClawCare activation link with a `reminderId`, run:
+
+```bash
+node {baseDir}/scripts/launch_prepared_reminder.mjs --reminder-id "<id>"
+```
+
+- This activation step must create the real training session, arrange `followUpSync` when enabled, then open the training page.
+- Do not claim that local auto-sync is armed until this activation step succeeds.
 
 When the user wants to sync a finished run, or when a follow-up sync event arrives:
 
@@ -51,6 +62,7 @@ If the script returns `status: "pending"`, explain only that the result is not r
 - `dailyPlan`: silent preparation only. It never becomes a visible reminder, and it stays off by default on fresh install.
 - `scheduledReminder`: the user explicitly asked for a timed reminder. The request itself is confirmation. Do not ask for a second confirmation.
 - `proactiveReminder`: OpenClaw may proactively remind the user based on recent training or health signals. This stays off by default and needs a clear opt-in before long-term enablement.
+- Timed reminders should prioritize visible delivery. If remote personalization is temporarily unavailable, send a conservative light-activity reminder instead of dropping the reminder.
 
 ## Long-Term Settings
 
@@ -84,6 +96,8 @@ Only write long-term settings when the user clearly means “以后 / 默认 / �
 
 - Visible reminders should follow the host agent's native routing model.
 - In OpenClaw, recurring reminders should use isolated cron runs and announce back to the last visible route.
+- For OpenClaw reminder delivery, treat the returned `activationUrl` as the primary link. It should route back into OpenClaw first, then let the skill arm sync and open the real training page.
+- Treat `browserLaunchUrl` as a fallback-only link. It is not the default CTA for OpenClaw.
 - Recurring ClawCare cron names are scoped to the current workspace. Do not assume a global shared cron name.
 - Do not hard-code Feishu, WeChat, Telegram, or any other external app in the skill.
 - If the host cannot guarantee a visible outbound route, do not pretend that external delivery is active. Say only what is true.
@@ -94,6 +108,8 @@ There are two automation patterns:
 
 - `ClawCare automation event:` means an internal system event. Run the referenced local script once. Reply with `NO_REPLY` only when no visible answer is needed.
 - `ClawCare reminder run:` means an isolated reminder turn. Run the referenced local script once, then reply with the returned `messageText` only. If the script returns `announceToken`, reply with that token exactly.
+- Timed reminder links may be delayed launch links. They create the real training session only when the user clicks them.
+- Only full activation hosts such as OpenClaw may promise automatic local write-back after reminder click. Limited hosts should only promise that the training page can be opened.
 
 ## References
 

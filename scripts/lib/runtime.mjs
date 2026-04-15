@@ -165,6 +165,11 @@ const normalizeReminderKind = (value) => (
     : 'direct'
 );
 
+const isOpenClawUri = (value) => (
+  typeof value === 'string'
+  && value.trim().toLowerCase().startsWith('openclaw://')
+);
+
 const parseMaybeInt = (value, fallback) => {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -908,12 +913,210 @@ export const requestReminderPlan = async (
   };
 };
 
+export const requestReminderPreparation = async (
+  payload,
+  baseCandidates,
+  fetchImpl = fetch,
+) => {
+  const response = await requestJsonWithCandidates(
+    '/api/reminders/prepare',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    },
+    baseCandidates,
+    fetchImpl,
+  );
+  return {
+    apiBase: response.apiBase,
+    reminder: response.data.reminder,
+    paths: response.data.paths,
+  };
+};
+
+export const requestPreparedReminderLaunch = async ({
+  reminderId,
+  family,
+  baseCandidates,
+  fetchImpl = fetch,
+}) => {
+  const normalizedReminderId = String(reminderId ?? '').trim();
+  if (!normalizedReminderId) {
+    throw new Error('missing_reminder_id');
+  }
+
+  const query = new URLSearchParams({ format: 'json' });
+  if (typeof family === 'string' && family.trim()) {
+    query.set('family', family.trim());
+  }
+
+  const response = await requestJsonWithCandidates(
+    `/api/reminders/${encodeURIComponent(normalizedReminderId)}/launch?${query.toString()}`,
+    {
+      method: 'GET',
+    },
+    baseCandidates,
+    fetchImpl,
+  );
+
+  return {
+    apiBase: response.apiBase,
+    reminderId: response.data.reminderId ?? normalizedReminderId,
+    session: response.data.session,
+    filePath: response.data.filePath,
+  };
+};
+
+const resolveFallbackFamily = (payload = {}) => {
+  const preferredFamily = payload?.openclawContext?.preferredFamilies?.[0]
+    ?? payload?.personalizationSignals?.preferences?.preferredFamilies?.[0];
+  if (preferredFamily === 'neck_wake' || preferredFamily === 'sedentary_activate' || preferredFamily === 'stress_reset') {
+    return preferredFamily;
+  }
+
+  const focus = payload?.personalizationSignals?.preferences?.focus
+    ?? payload?.personalizationSignals?.questionnaire?.focus;
+  if (focus === 'neck_relief') return 'neck_wake';
+  if (focus === 'stress_relief') return 'stress_reset';
+  return 'sedentary_activate';
+};
+
+const buildFallbackEntryUrl = (payload = {}, intentText) => {
+  const baseUrl = stripTrailingSlash(String(payload.baseUrl ?? CLAWCARE_DEFAULT_BASE_URL));
+  const url = new URL(`${baseUrl}/`);
+  url.searchParams.set('mode', 'protocol');
+  url.searchParams.set('entry', 'openclaw');
+  if (typeof payload.return_to === 'string' && payload.return_to.trim()) {
+    url.searchParams.set('return_to', payload.return_to.trim());
+  }
+  if (typeof intentText === 'string' && intentText.trim()) {
+    url.searchParams.set('intent', intentText.trim());
+  }
+  return url.toString();
+};
+
+const buildFallbackReminderPlan = ({
+  payload,
+  baseCandidates,
+  reminderKind,
+  proactiveDecision,
+}) => {
+  const family = resolveFallbackFamily(payload);
+  const reminderId = `reminder-fallback-${Date.now()}`;
+  const launchUrl = buildFallbackEntryUrl(payload, payload?.userIntent?.rawText);
+  const primarySignal = Array.isArray(payload?.memorySignals) && payload.memorySignals.length > 0
+    ? summarizeText(payload.memorySignals[0], 56)
+    : '';
+  const title = reminderKind === 'proactive'
+    ? '现在适合安排一组轻量活动'
+    : reminderKind === 'daily_plan'
+      ? '今日训练已准备好'
+      : '到时间活动一下了';
+  const summary = primarySignal
+    ? `今天先从保守、轻量的活动开始，重点留意：${primarySignal}`
+    : '今天先从保守、轻量的活动开始，控制幅度和节奏。';
+  const body = reminderKind === 'proactive' && proactiveDecision?.reasonText
+    ? `${proactiveDecision.reasonText}，先做一组轻量活动更稳妥。`
+    : '先做 3 到 6 分钟的轻量活动，再根据状态决定是否继续。';
+
+  return {
+    apiBase: baseCandidates[0] ?? stripTrailingSlash(String(payload.baseUrl ?? CLAWCARE_DEFAULT_BASE_URL)),
+    fallbackUsed: true,
+    reminder: {
+      reminder_id: reminderId,
+      title,
+      summary,
+      body,
+      created_at: new Date().toISOString(),
+      session_id: `prepared-${reminderId}`,
+      entry_source: 'openclaw',
+      protocol_family: family,
+      protocol_title: family === 'neck_wake'
+        ? '颈肩唤醒'
+        : family === 'stress_reset'
+          ? '舒压放松'
+          : '久坐激活',
+      launch_url: launchUrl,
+      return_to: payload?.return_to,
+      personalization_basis: Array.isArray(payload?.memorySignals) ? payload.memorySignals.slice(0, 3) : [],
+      openclaw_context_snapshot: payload?.openclawContext,
+      user_intent: payload?.userIntent,
+      personalization_signals: payload?.personalizationSignals,
+      decision_trace: {
+        topDrivers: primarySignal ? [primarySignal] : ['先从低强度轻量活动开始。'],
+        familyScores: {
+          neck_wake: family === 'neck_wake' ? 1 : 0,
+          sedentary_activate: family === 'sedentary_activate' ? 1 : 0,
+          stress_reset: family === 'stress_reset' ? 1 : 0,
+        },
+        trainingMode: 'conservative',
+        appliedConstraints: [],
+        sourceAvailability: {
+          history: Boolean(payload?.personalizationSignals?.history),
+          photo: false,
+          questionnaire: Boolean(payload?.personalizationSignals?.questionnaire),
+          preferences: Boolean(payload?.personalizationSignals?.preferences),
+          health: Boolean(payload?.personalizationSignals?.health),
+          weather: Boolean(payload?.personalizationSignals?.weather),
+          workState: Boolean(payload?.personalizationSignals?.workState),
+          userIntent: Boolean(payload?.userIntent?.rawText),
+        },
+      },
+      warnings: [],
+      conflicts: [],
+      recommended_intensity: 'conservative',
+      requested_intensity: payload?.userIntent?.requestedIntensity,
+      can_proceed_with_requested_plan: true,
+      alternate_protocols: [],
+      launch_context: {
+        version: 1,
+        source: 'openclaw_skill',
+        session_id: `prepared-${reminderId}`,
+        entry_source: 'openclaw',
+        protocol_family: family,
+        protocol_title: family === 'neck_wake'
+          ? '颈肩唤醒'
+          : family === 'stress_reset'
+            ? '舒压放松'
+            : '久坐激活',
+        launch_url: launchUrl,
+        return_to: payload?.return_to,
+        created_at: new Date().toISOString(),
+      },
+    },
+    paths: {},
+  };
+};
+
+export const requestReminderPreparationWithFallback = async ({
+  payload,
+  baseCandidates,
+  reminderKind,
+  proactiveDecision,
+  fetchImpl = fetch,
+}) => {
+  try {
+    return await requestReminderPreparation(payload, baseCandidates, fetchImpl);
+  } catch {
+    return buildFallbackReminderPlan({
+      payload,
+      baseCandidates,
+      reminderKind,
+      proactiveDecision,
+    });
+  }
+};
+
 export const cacheDailyPlan = async (workspacePaths, reminderPlan) => {
   await writeJsonFile(workspacePaths.dailyPlanCachePath, {
     requestedAt: new Date().toISOString(),
     apiBase: reminderPlan.apiBase,
     reminder: reminderPlan.reminder,
     session: reminderPlan.session,
+    fallbackUsed: reminderPlan.fallbackUsed ?? false,
     paths: reminderPlan.paths,
   });
   return workspacePaths.dailyPlanCachePath;
@@ -1883,13 +2086,144 @@ export const parsePatchInput = async (args) => {
   throw new Error('missing_patch_input');
 };
 
+const buildOpenClawAgentUrl = (message) => {
+  const url = new URL('openclaw://agent');
+  url.searchParams.set('message', message);
+  return url.toString();
+};
+
+const resolveReminderHostMode = ({
+  bootstrap,
+  reminderPlan,
+  reminderKind,
+}) => {
+  const normalizedKind = normalizeReminderKind(reminderKind);
+  if (normalizedKind === 'direct') {
+    return 'direct_session';
+  }
+
+  const returnTo = reminderPlan?.reminder?.return_to
+    ?? reminderPlan?.session?.return_to
+    ?? bootstrap?.config?.returnTo;
+
+  return isOpenClawUri(returnTo)
+    ? 'full_activation_host'
+    : 'limited_host';
+};
+
+const buildPreparedReminderActivationMessage = ({
+  reminderId,
+  family,
+}) => {
+  const familySuffix = typeof family === 'string' && family.trim()
+    ? ` (${family.trim()})`
+    : '';
+  return `Use ClawCare Protocol to activate prepared reminder ${reminderId}${familySuffix}. Arm follow-up sync, then open the training page.`;
+};
+
+const buildFallbackReminderActivationMessage = ({
+  reminder,
+}) => {
+  const family = typeof reminder?.protocol_family === 'string' && reminder.protocol_family.trim()
+    ? reminder.protocol_family.trim()
+    : '';
+  const summary = summarizeText(
+    reminder?.summary
+      ?? reminder?.body
+      ?? reminder?.title
+      ?? '',
+    88,
+  );
+  const parts = [
+    'Use ClawCare Protocol to start the reminder-triggered training now.',
+  ];
+  if (family) {
+    parts.push(`Prefer family ${family}.`);
+  }
+  if (summary) {
+    parts.push(`Use this cue: ${summary}.`);
+  }
+  parts.push('Create the real session, arm follow-up sync, then open the training page.');
+  return parts.join(' ');
+};
+
+const resolveBuildPlanLaunchTargets = ({
+  bootstrap,
+  reminderPlan,
+  reminderKind,
+  followUpSync,
+}) => {
+  const reminder = isRecord(reminderPlan?.reminder) ? reminderPlan.reminder : {};
+  const session = isRecord(reminderPlan?.session) ? reminderPlan.session : {};
+  const normalizedKind = normalizeReminderKind(reminderKind);
+  const browserLaunchUrl = session.launch_url ?? reminder.launch_url ?? '';
+  const hostMode = resolveReminderHostMode({
+    bootstrap,
+    reminderPlan,
+    reminderKind: normalizedKind,
+  });
+
+  if (normalizedKind === 'direct' || session.session_id) {
+    return {
+      launchUrl: browserLaunchUrl,
+      activationUrl: browserLaunchUrl,
+      browserLaunchUrl,
+      activationMode: 'session_launch',
+      followUpArmed: Boolean(followUpSync),
+      hostMode,
+    };
+  }
+
+  if (hostMode !== 'full_activation_host') {
+    return {
+      launchUrl: browserLaunchUrl,
+      activationUrl: browserLaunchUrl,
+      browserLaunchUrl,
+      activationMode: 'browser_only',
+      followUpArmed: false,
+      hostMode,
+    };
+  }
+
+  if (!reminderPlan?.fallbackUsed && typeof reminder.reminder_id === 'string' && reminder.reminder_id.trim()) {
+    const activationUrl = buildOpenClawAgentUrl(buildPreparedReminderActivationMessage({
+      reminderId: reminder.reminder_id.trim(),
+      family: reminder.protocol_family,
+    }));
+    return {
+      launchUrl: activationUrl,
+      activationUrl,
+      browserLaunchUrl,
+      activationMode: 'openclaw_callback',
+      followUpArmed: false,
+      hostMode,
+    };
+  }
+
+  const activationUrl = buildOpenClawAgentUrl(buildFallbackReminderActivationMessage({
+    reminder,
+  }));
+  return {
+    launchUrl: activationUrl,
+    activationUrl,
+    browserLaunchUrl,
+    activationMode: 'openclaw_direct_start',
+    followUpArmed: false,
+    hostMode,
+  };
+};
+
 const buildReminderMessageText = ({
   reminderPlan,
   reminderKind = 'direct',
   proactiveDecision,
+  launchTargets,
 }) => {
   const reminder = isRecord(reminderPlan?.reminder) ? reminderPlan.reminder : {};
-  const launchUrl = reminderPlan?.session?.launch_url ?? reminder.launch_url ?? '';
+  const launchUrl = launchTargets?.launchUrl
+    ?? reminderPlan?.session?.launch_url
+    ?? reminder.launch_url
+    ?? '';
   const summary = summarizeText(
     reminder.summary
       ?? reminder.body
@@ -1942,6 +2276,84 @@ export const buildSkippedBuildPlanResult = ({
   reasonText: proactiveDecision?.reasonText ?? '当前不需要发送提醒',
 });
 
+const deriveDisplayReminderCopyV2 = ({
+  reminderPlan,
+  reminderKind,
+}) => {
+  const reminder = isRecord(reminderPlan?.reminder) ? reminderPlan.reminder : {};
+  if (!reminderPlan?.fallbackUsed) {
+    return {
+      title: reminder.title,
+      summary: reminder.summary,
+      body: reminder.body,
+    };
+  }
+
+  const title = reminderKind === 'daily_plan'
+    ? '\u4eca\u65e5\u8bad\u7ec3\u5df2\u51c6\u5907\u597d'
+    : reminderKind === 'proactive'
+      ? '\u73b0\u5728\u9002\u5408\u5b89\u6392\u4e00\u7ec4\u8f7b\u91cf\u6d3b\u52a8'
+      : '\u5230\u65f6\u95f4\u6d3b\u52a8\u4e00\u4e0b\u4e86';
+  const summary = typeof reminder.summary === 'string' && reminder.summary.trim()
+    ? reminder.summary
+    : '\u5148\u4ece\u4fdd\u5b88\u3001\u8f7b\u91cf\u7684\u6d3b\u52a8\u5f00\u59cb\uff0c\u63a7\u5236\u5e45\u5ea6\u548c\u8282\u594f\u3002';
+  const body = typeof reminder.body === 'string' && reminder.body.trim()
+    ? reminder.body
+    : '\u5148\u505a 3 \u5230 6 \u5206\u949f\u7684\u8f7b\u91cf\u6d3b\u52a8\uff0c\u518d\u6839\u636e\u72b6\u6001\u51b3\u5b9a\u662f\u5426\u7ee7\u7eed\u3002';
+  return { title, summary, body };
+};
+
+const buildReminderMessageTextV2 = ({
+  reminderPlan,
+  reminderKind = 'direct',
+  proactiveDecision,
+  launchTargets,
+}) => {
+  const reminder = isRecord(reminderPlan?.reminder) ? reminderPlan.reminder : {};
+  const displayCopy = deriveDisplayReminderCopyV2({
+    reminderPlan,
+    reminderKind,
+  });
+  const launchUrl = launchTargets?.launchUrl
+    ?? reminderPlan?.session?.launch_url
+    ?? reminder.launch_url
+    ?? '';
+  const summary = summarizeText(
+    displayCopy.summary
+      ?? displayCopy.body
+      ?? displayCopy.title
+      ?? '\u5df2\u4e3a\u4f60\u51c6\u5907\u4e00\u7ec4\u9002\u5408\u5f53\u524d\u72b6\u6001\u7684\u8bad\u7ec3\u3002',
+    120,
+  );
+  const warning = summarizeText(
+    Array.isArray(reminder.warnings) && reminder.warnings.length > 0
+      ? reminder.warnings[0]
+      : Array.isArray(reminder.conflicts) && reminder.conflicts.length > 0
+        ? reminder.conflicts[0]
+        : '',
+    48,
+  );
+  const opening = reminderKind === 'scheduled'
+    ? '\u5230\u65f6\u95f4\u6d3b\u52a8\u4e00\u4e0b\u4e86\u3002'
+    : reminderKind === 'proactive'
+      ? proactiveDecision?.shouldAnnounce
+        ? '\u73b0\u5728\u53ef\u4ee5\u5b89\u6392\u4e00\u7ec4\u8f7b\u91cf\u6d3b\u52a8\u3002'
+        : '\u73b0\u5728\u9002\u5408\u5148\u4fdd\u6301\u8f7b\u91cf\u6d3b\u52a8\u3002'
+      : displayCopy.title?.trim() || '\u5df2\u4e3a\u4f60\u51c6\u5907\u597d\u4eca\u5929\u7684\u8bad\u7ec3\u3002';
+
+  const lines = [
+    opening,
+    `\u8fd9\u6b21\u66f4\u9002\u5408\u4f60\u5f53\u524d\u72b6\u6001\uff1a${summary}`,
+  ];
+  if (warning) {
+    lines.push(`\u5f00\u59cb\u524d\u6ce8\u610f\uff1a${warning}`);
+  }
+  if (launchUrl) {
+    lines.push(`\u6253\u5f00\u8bad\u7ec3\uff1a${launchUrl}`);
+  }
+  return lines.join('\n');
+};
+
 export const buildBuildPlanResult = ({
   bootstrap,
   reminderPlan,
@@ -1950,32 +2362,51 @@ export const buildBuildPlanResult = ({
   opened,
   reminderKind = 'direct',
   proactiveDecision,
-}) => ({
-  status: 'ok',
-  apiBase: reminderPlan.apiBase,
-  configPath: bootstrap.workspacePaths.configPath,
-  cachePath,
-  sessionId: reminderPlan.session.session_id,
-  protocolFamily: reminderPlan.session.protocol_family,
-  launchUrl: reminderPlan.session.launch_url,
-  reminderId: reminderPlan.reminder.reminder_id,
-  title: reminderPlan.reminder.title,
-  summary: reminderPlan.reminder.summary,
-  body: reminderPlan.reminder.body,
-  protocolTitle: reminderPlan.reminder.protocol_title,
-  recommendedIntensity: reminderPlan.reminder.recommended_intensity,
-  requestedIntensity: reminderPlan.reminder.requested_intensity,
-  warnings: reminderPlan.reminder.warnings ?? [],
-  conflicts: reminderPlan.reminder.conflicts ?? [],
-  bootstrapDisclosure: bootstrap.bootstrapDisclosure,
-  disclosurePending: bootstrap.disclosurePending,
-  opened,
-  followUpSync,
-  reminderKind: normalizeReminderKind(reminderKind),
-  shouldAnnounce: true,
-  messageText: buildReminderMessageText({
+}) => {
+  const displayCopy = deriveDisplayReminderCopyV2({
     reminderPlan,
     reminderKind,
-    proactiveDecision,
-  }),
-});
+  });
+  const launchTargets = resolveBuildPlanLaunchTargets({
+    bootstrap,
+    reminderPlan,
+    reminderKind,
+    followUpSync,
+  });
+
+  return {
+    status: 'ok',
+    apiBase: reminderPlan.apiBase,
+    configPath: bootstrap.workspacePaths.configPath,
+    cachePath,
+    sessionId: reminderPlan.session?.session_id,
+    protocolFamily: reminderPlan.session?.protocol_family ?? reminderPlan.reminder.protocol_family,
+    launchUrl: launchTargets.launchUrl,
+    activationUrl: launchTargets.activationUrl,
+    browserLaunchUrl: launchTargets.browserLaunchUrl,
+    activationMode: launchTargets.activationMode,
+    followUpArmed: launchTargets.followUpArmed,
+    reminderId: reminderPlan.reminder.reminder_id,
+    title: displayCopy.title,
+    summary: displayCopy.summary,
+    body: displayCopy.body,
+    protocolTitle: reminderPlan.reminder.protocol_title,
+    recommendedIntensity: reminderPlan.reminder.recommended_intensity,
+    requestedIntensity: reminderPlan.reminder.requested_intensity,
+    warnings: reminderPlan.reminder.warnings ?? [],
+    conflicts: reminderPlan.reminder.conflicts ?? [],
+    bootstrapDisclosure: bootstrap.bootstrapDisclosure,
+    disclosurePending: bootstrap.disclosurePending,
+    opened,
+    followUpSync,
+    fallbackUsed: reminderPlan.fallbackUsed ?? false,
+    reminderKind: normalizeReminderKind(reminderKind),
+    shouldAnnounce: true,
+    messageText: buildReminderMessageTextV2({
+      reminderPlan,
+      reminderKind,
+      proactiveDecision,
+      launchTargets,
+    }),
+  };
+};

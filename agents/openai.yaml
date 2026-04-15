@@ -3,4 +3,4 @@ interface:
   short_description: "Start ClawCare plans, reminders, and sync"
   icon_large: "./assets/clawcare-mark.svg"
   brand_color: "#0F766E"
-  default_prompt: "Use $clawcare_protocol to start ClawCare training, set a reminder, or sync a finished run."
+  default_prompt: "Use ClawCare Protocol to start training, set a reminder, or sync a finished run."
