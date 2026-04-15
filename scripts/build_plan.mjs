@@ -55,6 +55,7 @@ export const main = async (args = process.argv.slice(2)) => {
       baseCandidates: apiBaseCandidates,
       reminderKind,
       proactiveDecision,
+      workspacePaths: bootstrap.workspacePaths,
     })
     : await requestReminderPlan(
       planContext.payload,
@@ -79,6 +80,7 @@ export const main = async (args = process.argv.slice(2)) => {
   }
 
   const opened = buildDailyPlanShouldOpen(bootstrap.config, {
+    reminderKind,
     forceOpen: hasFlag(args, '--open'),
     forceNoOpen: hasFlag(args, '--no-open'),
   });
