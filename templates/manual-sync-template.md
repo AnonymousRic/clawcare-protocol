@@ -1,4 +1,4 @@
-## ClawCare 训练记录
+## 奇点行动 训练记录
 
 - 会话 ID: <session_id>
 - 协议名称: <protocol_name>

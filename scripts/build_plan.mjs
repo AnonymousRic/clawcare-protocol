@@ -9,6 +9,7 @@ import {
   getApiBaseCandidates,
   hasFlag,
   openUrl,
+  parseHostCapabilityFlags,
   parseFlagValue,
   requestReminderPreparationWithFallback,
   requestReminderPlan,
@@ -18,14 +19,18 @@ import {
 
 export const main = async (args = process.argv.slice(2)) => {
   const configPath = parseFlagValue(args, '--config');
+  const locatorPath = parseFlagValue(args, '--locator');
   const openclawBin = parseFlagValue(args, '--openclaw-bin');
   const intentText = parseFlagValue(args, '--intent');
   const reminderKind = parseFlagValue(args, '--reminder-kind');
   const baseUrl = parseFlagValue(args, '--base');
   const returnTo = parseFlagValue(args, '--return-to');
+  const hostCapabilities = parseHostCapabilityFlags(args);
   const bootstrap = await ensureBootstrap({
     configPath,
+    locatorPath,
     markDisclosureShown: true,
+    hostCapabilities,
   });
   const planContext = await collectPlanContext(bootstrap.config, bootstrap.workspacePaths, {
     intentText,
@@ -83,6 +88,7 @@ export const main = async (args = process.argv.slice(2)) => {
     reminderKind,
     forceOpen: hasFlag(args, '--open'),
     forceNoOpen: hasFlag(args, '--no-open'),
+    hostCanOpenLocalBrowser: hostCapabilities.canOpenLocalBrowser,
   });
   const result = buildBuildPlanResult({
     bootstrap,
@@ -92,6 +98,7 @@ export const main = async (args = process.argv.slice(2)) => {
     opened: false,
     reminderKind,
     proactiveDecision,
+    hostCapabilities,
   });
 
   if (opened && result.launchUrl) {

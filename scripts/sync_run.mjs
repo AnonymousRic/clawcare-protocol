@@ -2,6 +2,7 @@ import {
   ensureBootstrap,
   fetchSyncBundle,
   getApiBaseCandidates,
+  parseHostCapabilityFlags,
   parseFlagValue,
   resolveSkillRoot,
   scheduleFollowUpSyncJob,
@@ -10,12 +11,14 @@ import {
 
 export const main = async (args = process.argv.slice(2)) => {
   const configPath = parseFlagValue(args, '--config');
+  const locatorPath = parseFlagValue(args, '--locator');
   const openclawBin = parseFlagValue(args, '--openclaw-bin');
   const baseUrl = parseFlagValue(args, '--base');
   const runId = parseFlagValue(args, '--run-id');
   const sessionId = parseFlagValue(args, '--session-id');
   const retryCount = Math.max(0, Number.parseInt(parseFlagValue(args, '--retry-count') ?? '0', 10) || 0);
   const retryDelayMin = Math.max(1, Number.parseInt(parseFlagValue(args, '--retry-delay-min') ?? '10', 10) || 10);
+  const hostCapabilities = parseHostCapabilityFlags(args);
 
   if (!runId && !sessionId) {
     throw new Error('missing_run_id_or_session_id');
@@ -23,7 +26,9 @@ export const main = async (args = process.argv.slice(2)) => {
 
   const bootstrap = await ensureBootstrap({
     configPath,
+    locatorPath,
     markDisclosureShown: false,
+    hostCapabilities,
   });
   const bundle = await fetchSyncBundle(
     getApiBaseCandidates(baseUrl ?? bootstrap.config.baseUrl),
@@ -50,6 +55,8 @@ export const main = async (args = process.argv.slice(2)) => {
       sessionId,
       runId,
       configPath: bootstrap.workspacePaths.configPath,
+      locatorPath: bootstrap.workspacePaths.locatorPath,
+      hostProfile: bootstrap.hostProfile,
       retry,
     }, null, 2));
     return;
@@ -62,9 +69,13 @@ export const main = async (args = process.argv.slice(2)) => {
     status: 'ok',
     apiBase: bundle.apiBase,
     configPath: bootstrap.workspacePaths.configPath,
+    locatorPath: bootstrap.workspacePaths.locatorPath,
+    hostProfile: bootstrap.hostProfile,
     sessionId: bundle.note.session_id,
     runId: bundle.note.run_id,
     protocol: bundle.note.protocol,
+    localArtifacts: result.localArtifacts,
+    hostMemorySpec: result.hostMemorySpec,
     result,
   }, null, 2));
 };

@@ -1,6 +1,6 @@
 ---
 name: clawcare-protocol
-description: Start ClawCare training, set reminders, and sync finished runs inside OpenClaw or other skill-capable agents.
+description: Start ClawCare training, set reminders, and sync finished runs inside OpenClaw, Hermes, or other skill-capable agents.
 ---
 
 # ClawCare Protocol
@@ -9,114 +9,103 @@ Use this skill when the user wants ClawCare help.
 
 ## Core Rules
 
-- Keep every action inside the skill bundle.
-- Only read or write under `~/.openclaw/workspace/clawcare/` and the current daily memory file under `~/.openclaw/workspace/memory/`.
+- Keep every action inside the installed skill bundle and the resolved ClawCare state root.
+- The host agent decides the stable storage root on first run. The skill only reuses the returned `locatorPath` and `hostProfile`.
+- The skill may maintain only:
+  - `config.json`
+  - `runs/<run-id>.json`
+  - `cache/prepared_reminders/<id>.json`
+  - `cache/daily_plan.json`
+  - `cache/automation_state.json`
+  - `recent_analysis.md`
+  - `locator.json`
+  - `memory/YYYY-MM-DD.md` as a local planning mirror when needed
 - Do not read screen content, keyboard input, camera frames, browser history, or unrelated local files.
 - Treat all ClawCare output as low-intensity training guidance, not diagnosis or treatment.
 - If the user mentions acute pain, dizziness, numbness, chest tightness, or worsening symptoms, stop the training flow and advise offline medical evaluation instead of launching training.
+
+## Host Principle
+
+- The skill gives direction, constraints, and stable local scripts.
+- The host agent decides how to use its own native memory, scheduler, hooks, webhooks, browser, or message delivery.
+- OpenClaw, Hermes, and generic agents all use the same abstraction:
+  bootstrap once, keep `locatorPath`, then reuse it on later script calls.
 
 ## First Action
 
 On the first real ClawCare request in a thread, run:
 
 ```bash
-node {baseDir}/scripts/bootstrap.mjs
+node {baseDir}/scripts/bootstrap.mjs \
+  --host-kind "<openclaw|hermes|generic_agent>" \
+  --host-can-open-local-browser "<true|false>" \
+  --host-can-handle-openclaw-callback "<true|false>" \
+  --host-has-native-memory "<true|false>" \
+  --host-has-native-scheduler "<true|false>"
 ```
 
-If the result includes `disclosurePending: true` and `bootstrapDisclosure`, say that disclosure once in natural Chinese, then continue.
+Rules:
 
-Fresh install should stay light: do not imply that a recurring `dailyPlan` is enabled unless the stored config actually enables it.
+- Pass only capabilities that the host can explicitly prove.
+- Keep the returned `locatorPath`.
+- Keep the returned `hostProfile`.
+- On later calls, prefer `--locator "<locatorPath>"`.
+- Treat later `--host-*` flags only as compatibility overrides, not as the normal path.
+- If `disclosurePending: true`, say `bootstrapDisclosure` once in natural Chinese, then continue.
 
-## Training Loop
+## Required Scripts
 
-When the user wants to start training:
+- Training or preview: `build_plan.mjs`
+- Reminder activation: `launch_prepared_reminder.mjs`
+- Finished run sync: `sync_run.mjs`
+- Long-term preference update: `settings_patch.mjs`
+- Optional explicit follow-up scheduling: `schedule_sync.mjs`
+- Optional memory materialization from an existing run: `write_memory.mjs`
 
-1. If the user clearly means “现在开始练”, run `node {baseDir}/scripts/build_plan.mjs --intent "<user request>" --open`.
-2. If the user only wants to preview or compare options, run `node {baseDir}/scripts/build_plan.mjs --intent "<user request>" --no-open`.
-3. Treat the returned plan as personalized by default. The script already reads local run history, `recent_analysis.md`, and recent daily memory summaries.
-4. Explain the returned `summary` briefly in natural Chinese.
-5. Direct start flows should open the returned `launchUrl` immediately unless the user explicitly said not to open the page.
-6. If the result includes `followUpSync`, treat it as the default post-run sync arrangement. This appears after a real session has been created.
-7. Do not expose internal field names, JSON keys, API paths, or storage details.
+## Output Contract
 
-When the request is a reminder activation, not a new reminder:
+Every script response should be treated as structured host guidance. Important fields:
 
-- If the host opens a prepared reminder activation with a `reminderId`, run:
+- `status`
+- `locatorPath`
+- `hostProfile`
+- `activationSpec`
+- `hostSchedulerSpec` or `null`
+- `hostMemorySpec` or `null`
+- `localArtifacts`
 
-```bash
-node {baseDir}/scripts/launch_prepared_reminder.mjs --reminder-id "<id>"
-```
+Interpretation rules:
 
-- If the host opens a local fallback activation with an `activationRef`, run:
+- `activationSpec` tells the host how to route user entry.
+  It may be `deeplink`, `web`, or `message`.
+- `hostSchedulerSpec` means the host should apply its native scheduler if it has one.
+- `hostMemorySpec` means the host should mirror the local summary into its own native memory if it has one.
+- `localArtifacts` are the stable files the skill already wrote locally. They are the compatibility fallback, not proof that host-native work is complete.
 
-```bash
-node {baseDir}/scripts/launch_prepared_reminder.mjs --activation-ref "<ref>"
-```
+## Workflow
 
-- Reminder activation is the only reminder launcher path: create the real training session, arrange `followUpSync` when enabled, then open the training page.
-- Do not claim that local auto-sync is armed until this activation step succeeds.
+- When the user wants to start now:
+  run `build_plan.mjs` with `--locator "<locatorPath>"`.
+  Use `--open` only when the host explicitly supports local browser launch.
+- When the user only wants preview or comparison:
+  run `build_plan.mjs` with `--locator "<locatorPath>" --no-open`.
+- When a reminder entry is clicked or activated:
+  run `launch_prepared_reminder.mjs` with `--locator "<locatorPath>"` and either `--reminder-id` or `--activation-ref`.
+- When a run finishes and should be written back:
+  run `sync_run.mjs` with `--locator "<locatorPath>"` and `--session-id` or `--run-id`.
+- When the user wants long-term defaults or recurring behavior:
+  map the request into a JSON patch and run `settings_patch.mjs` with `--locator "<locatorPath>"`.
 
-When the user wants to sync a finished run, or when a follow-up sync event arrives:
+## Reminder Rules
 
-```bash
-node {baseDir}/scripts/sync_run.mjs --session-id "<session id>"
-```
-
-If the script returns `status: "pending"`, explain only that the result is not ready yet when the user explicitly asked. Background sync runs should stay silent unless a visible reply is required.
-
-## Reminder Types
-
-- `dailyPlan`: silent preparation only. It never becomes a visible reminder, and it stays off by default on fresh install.
-- `scheduledReminder`: the user explicitly asked for a timed reminder. The request itself is confirmation. Do not ask for a second confirmation.
-- `proactiveReminder`: OpenClaw may proactively remind the user based on recent training or health signals. This stays off by default and needs a clear opt-in before long-term enablement.
-- Timed reminders should prioritize visible delivery. They must not create a real training session until the user clicks the reminder entry.
-
-## Long-Term Settings
-
-Map natural-language preference changes into a structured patch, then run:
-
-```bash
-node {baseDir}/scripts/settings_patch.mjs --patch-json '<json patch>'
-```
-
-Allowed long-term fields:
-
-- `automation.dailyPlan.enabled`
-- `automation.dailyPlan.scheduleLocalTime`
-- `automation.postRunSync.enabled`
-- `automation.postRunSync.followUpDelayMin`
-- `automation.scheduledReminder.enabled`
-- `automation.scheduledReminder.scheduleLocalTime`
-- `automation.scheduledReminder.weekdays`
-- `automation.proactiveReminder.enabled`
-- `automation.proactiveReminder.scheduleLocalTime`
-- `automation.proactiveReminder.weekdays`
-- `consent.proactiveReminderExplained`
-- `openclawContext.*`
-- `personalizationSignals.preferences.*`
-- `personalizationSignals.questionnaire.*`
-- `workState.*`
-
-Only write long-term settings when the user clearly means “以后 / 默认 / 长期”.
-
-## Reminder Routing
-
-- Visible reminders should follow the host agent's native routing model.
-- In OpenClaw, recurring reminders should use isolated cron runs and announce back to the last visible route.
-- For OpenClaw reminder delivery, treat `activationUrl` as the primary link. It should route back into OpenClaw first, then let the skill arm sync and open the real training page.
-- Include `browserLaunchUrl` as a明确备用入口 in reminder messages so the user can still open the page directly if the host link is unavailable.
-- Recurring ClawCare cron names are scoped to the current workspace. Do not assume a global shared cron name.
-- Do not hard-code Feishu, WeChat, Telegram, or any other external app in the skill.
-- If the host cannot guarantee a visible outbound route, do not pretend that external delivery is active. Say only what is true.
-
-## Automation Runs
-
-- `ClawCare automation event:` means an internal system event. Run the referenced local script once. Reply with `NO_REPLY` only when no visible answer is needed.
-- `ClawCare reminder run:` means an isolated reminder turn. Run the referenced local script once, then reply with the returned `messageText` only. If the script returns `announceToken`, reply with that token exactly.
-- Timed reminder links are delayed launch links. They create the real training session only when the user clicks them.
-- Only full activation hosts such as OpenClaw may promise automatic local write-back after reminder click. Limited hosts should only promise that the training page can be opened.
+- `dailyPlan` is silent preparation only.
+- `scheduledReminder` is user-confirmed as soon as the user explicitly asks for it.
+- `proactiveReminder` stays off by default and needs clear opt-in.
+- Timed reminder generation must not create a real training session before activation.
+- Hermes should not simulate OpenClaw URI callback routing.
+  Prefer native message delivery, webhooks, API-server flows, or browser/web entry.
 
 ## References
 
-- Read [references/runtime-loop.md](references/runtime-loop.md) for script roles, cron shape, and reminder delivery rules.
+- Read [references/runtime-loop.md](references/runtime-loop.md) for script roles, host contracts, and reminder delivery rules.
 - Read [references/privacy-boundary.md](references/privacy-boundary.md) before enabling proactive reminders or when privacy questions appear.

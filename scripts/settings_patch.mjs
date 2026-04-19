@@ -1,5 +1,7 @@
 import {
   applySettingsPatch,
+  buildHostProfile,
+  parseHostCapabilityFlags,
   parseFlagValue,
   parsePatchInput,
   resolveSkillRoot,
@@ -8,9 +10,11 @@ import {
 
 export const main = async (args = process.argv.slice(2)) => {
   const configPath = parseFlagValue(args, '--config');
+  const locatorPath = parseFlagValue(args, '--locator');
   const openclawBin = parseFlagValue(args, '--openclaw-bin');
+  const hostCapabilities = parseHostCapabilityFlags(args);
   const patch = await parsePatchInput(args);
-  const workspacePaths = resolveWorkspacePaths({ configPath });
+  const workspacePaths = resolveWorkspacePaths({ configPath, locatorPath, hostCapabilities });
   const result = await applySettingsPatch({
     patch,
     workspacePaths,
@@ -21,6 +25,8 @@ export const main = async (args = process.argv.slice(2)) => {
   console.log(JSON.stringify({
     status: 'ok',
     configPath: workspacePaths.configPath,
+    locatorPath: workspacePaths.locatorPath,
+    hostProfile: buildHostProfile(workspacePaths.hostLocator),
     patch,
     automation: result.automation,
     config: result.config,

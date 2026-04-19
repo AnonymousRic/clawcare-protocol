@@ -4,8 +4,8 @@
 
 Use only:
 
-- ClawCare training records under `~/.openclaw/workspace/clawcare/`
-- daily memory summaries under `~/.openclaw/workspace/memory/`
+- ClawCare training records under the resolved ClawCare state root
+- the local memory mirror under `memory/YYYY-MM-DD.md` when present
 - the user's current natural-language request
 - long-term preferences the user explicitly asked to store
 
@@ -19,7 +19,7 @@ Do not read:
 - keyboard input or clipboard content
 - camera frames
 - browser history
-- arbitrary local files outside the ClawCare workspace and current daily memory file
+- arbitrary local files outside the resolved ClawCare state root
 
 ## Reminder Consent
 

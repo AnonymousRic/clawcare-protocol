@@ -1,5 +1,6 @@
 import {
   ensureBootstrap,
+  parseHostCapabilityFlags,
   parseFlagValue,
   resolveSkillRoot,
   scheduleFollowUpSyncJob,
@@ -7,14 +8,18 @@ import {
 
 export const main = async (args = process.argv.slice(2)) => {
   const configPath = parseFlagValue(args, '--config');
+  const locatorPath = parseFlagValue(args, '--locator');
   const sessionId = parseFlagValue(args, '--session-id');
   if (!sessionId) {
     throw new Error('missing_session_id');
   }
   const openclawBin = parseFlagValue(args, '--openclaw-bin');
+  const hostCapabilities = parseHostCapabilityFlags(args);
   const bootstrap = await ensureBootstrap({
     configPath,
+    locatorPath,
     markDisclosureShown: false,
+    hostCapabilities,
   });
   const followUpSync = await scheduleFollowUpSyncJob({
     config: bootstrap.config,
@@ -29,6 +34,8 @@ export const main = async (args = process.argv.slice(2)) => {
     status: 'ok',
     sessionId,
     configPath: bootstrap.workspacePaths.configPath,
+    locatorPath: bootstrap.workspacePaths.locatorPath,
+    hostProfile: bootstrap.hostProfile,
     followUpSync,
   }, null, 2));
 };

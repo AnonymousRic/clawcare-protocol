@@ -2,15 +2,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import {
-  appendMemoryFile,
   ensureBootstrap,
   fetchSyncBundle,
   getApiBaseCandidates,
-  indexOpenClawMemory,
   parseFlagValue,
   parseBooleanValue,
-  resolveWorkspacePaths,
-  writeRecentAnalysis,
+  syncRunToWorkspace,
 } from './lib/runtime.mjs';
 
 const loadExistingRunRecord = async (workspacePaths, runId) => {
@@ -30,6 +27,7 @@ const loadExistingRunRecord = async (workspacePaths, runId) => {
 
 export const main = async (args = process.argv.slice(2)) => {
   const configPath = parseFlagValue(args, '--config');
+  const locatorPath = parseFlagValue(args, '--locator');
   const openclawBin = parseFlagValue(args, '--openclaw-bin');
   const baseUrl = parseFlagValue(args, '--base');
   const runId = parseFlagValue(args, '--run-id');
@@ -38,9 +36,10 @@ export const main = async (args = process.argv.slice(2)) => {
 
   const bootstrap = await ensureBootstrap({
     configPath,
+    locatorPath,
     markDisclosureShown: false,
   });
-  const workspacePaths = resolveWorkspacePaths({ configPath });
+  const workspacePaths = bootstrap.workspacePaths;
 
   const existingRecord = await loadExistingRunRecord(workspacePaths, runId);
   const bundle = existingRecord
@@ -68,26 +67,24 @@ export const main = async (args = process.argv.slice(2)) => {
     return;
   }
 
-  const memoryWrite = await appendMemoryFile(workspacePaths, bundle.note, {
-    run: bundle.run,
+  const result = await syncRunToWorkspace(workspacePaths, bundle, {
+    openclawBin,
+    skipMemoryIndex: skipIndex,
   });
-  const recentAnalysisPath = await writeRecentAnalysis(workspacePaths, bundle.note);
-  const memoryIndex = skipIndex
-    ? { indexed: false, command: null }
-    : await indexOpenClawMemory({
-      openclawBin,
-      cwd: workspacePaths.workspaceDir,
-    });
 
   console.log(JSON.stringify({
     status: 'ok',
     configPath: workspacePaths.configPath,
+    locatorPath: workspacePaths.locatorPath,
     runId: bundle.note.run_id,
     sessionId: bundle.note.session_id,
-    memoryPath: memoryWrite.memoryPath,
-    memoryAppended: memoryWrite.appended,
-    recentAnalysisPath,
-    memoryIndex,
+    hostProfile: bootstrap.hostProfile,
+    memoryPath: result.memoryPath,
+    memoryAppended: result.memoryAppended,
+    recentAnalysisPath: result.recentAnalysisPath,
+    memoryIndex: result.memoryIndex,
+    hostMemorySpec: result.hostMemorySpec,
+    localArtifacts: result.localArtifacts,
   }, null, 2));
 };
 
