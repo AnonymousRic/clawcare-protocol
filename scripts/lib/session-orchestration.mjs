@@ -20,6 +20,7 @@ import {
   trimToUndefined,
   uniqueStrings,
 } from './core.mjs';
+import { buildPostRunSyncSpec } from './host-adapters.mjs';
 import { formatMemoryMarkdown } from './state-store.mjs';
 
 export const getApiBaseCandidates = (...values) => uniqueStrings(
@@ -659,7 +660,7 @@ const buildReminderMessageText = ({
   return lines.join('\n');
 };
 
-const parseFallbackDelayMin = (followUpSync) => {
+export const parseFallbackDelayMin = (followUpSync) => {
   const atValue = followUpSync?.hostSchedulerSpec?.schedule?.at;
   if (typeof atValue === 'string') {
     const match = atValue.match(/(\d+)/);
@@ -670,7 +671,7 @@ const parseFallbackDelayMin = (followUpSync) => {
   return null;
 };
 
-const buildSyncPolicy = ({
+export const buildSyncPolicy = ({
   bootstrap,
   followUpSync,
 }) => ({
@@ -680,7 +681,7 @@ const buildSyncPolicy = ({
   requiresHostNativeWriteback: bootstrap.workspacePaths.hostLocator.memoryBackend === 'host_native',
 });
 
-const buildHostActionHints = ({
+export const buildHostActionHints = ({
   bootstrap,
   followUpSync,
 }) => {
@@ -724,6 +725,7 @@ export const buildSkippedBuildPlanResult = ({
     bootstrap,
     followUpSync: null,
   }),
+  postRunSyncSpec: null,
   activationSpec: null,
   localArtifacts: null,
 });
@@ -737,6 +739,7 @@ export const buildBuildPlanResult = ({
   reminderKind = 'direct',
   proactiveDecision,
   hostCapabilities,
+  skillRoot,
 }) => {
   const displayCopy = deriveDisplayReminderCopy({
     reminderPlan,
@@ -770,6 +773,12 @@ export const buildBuildPlanResult = ({
     }),
     hostActionHints: buildHostActionHints({
       bootstrap,
+      followUpSync,
+    }),
+    postRunSyncSpec: buildPostRunSyncSpec({
+      skillRoot,
+      locatorPath: bootstrap.workspacePaths.locatorPath,
+      sessionId: reminderPlan.session?.session_id,
       followUpSync,
     }),
     reminderId: reminderPlan.reminder.reminder_id,

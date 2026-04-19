@@ -49,6 +49,19 @@ export const buildCronExpressionForLocalTime = (timeText, weekdays = null) => {
   return `${minutes} ${hours} * * ${weekdayPart}`;
 };
 
+export const HOST_HISTORY_INPUT_FLAGS = ['--host-history-json', '--host-history-file'];
+export const HOST_HISTORY_REQUIRED_FIELDS = [
+  'sessionId',
+  'runId',
+  'protocol',
+  'summary',
+  'nextSuggestion',
+  'recommendedIntensity',
+  'warnings',
+  'conflicts',
+  'syncedAt',
+];
+
 const buildCronSystemEvent = (action, payload) => [
   `ClawCare automation event: ${action}.`,
   'Use the installed `clawcare-protocol` skill.',
@@ -115,20 +128,32 @@ export const buildFollowUpSyncSystemEvent = ({
   sessionId,
   retryCount = CLAWCARE_SYNC_RETRY_COUNT,
   retryDelayMin = CLAWCARE_SYNC_RETRY_DELAY_MIN,
-}) => buildCronSystemEvent('follow-up-sync', {
-  script: path.join(skillRoot, 'scripts', 'sync_run.mjs'),
-  args: [
-    '--locator',
-    locatorPath,
-    '--session-id',
+}) => [
+  'ClawCare automation event: follow-up-sync.',
+  'Use the installed `clawcare-protocol` skill.',
+  'Use the host agent\'s local execution capability to run the local Node script below exactly once.',
+  'Read the JSON stdout.',
+  'If the result status is "ok" and `hostWritebackSpec.required` is true, immediately mirror `hostMemorySpec` into the host-managed long-term memory store.',
+  `Before the next build_plan.mjs call, retrieve recent ClawCare history from that host-managed store and pass it back with ${HOST_HISTORY_INPUT_FLAGS.join(' or ')}.`,
+  `When the work completes successfully and no direct user reply is required, respond with ${CLAWCARE_NO_REPLY}.`,
+  '',
+  '```json',
+  stableStringify({
+    script: path.join(skillRoot, 'scripts', 'sync_run.mjs'),
+    args: [
+      '--locator',
+      locatorPath,
+      '--session-id',
+      sessionId,
+      '--retry-count',
+      String(retryCount),
+      '--retry-delay-min',
+      String(retryDelayMin),
+    ],
     sessionId,
-    '--retry-count',
-    String(retryCount),
-    '--retry-delay-min',
-    String(retryDelayMin),
-  ],
-  sessionId,
-});
+  }),
+  '```',
+].join('\n');
 
 export const buildScheduledReminderMessage = ({
   skillRoot,
@@ -550,7 +575,6 @@ export const reconcileAutomationJobs = async ({
         locatorPath: workspacePaths.locatorPath,
       }),
       announce: true,
-      channel: 'last',
       existingJob: existingScheduledReminder,
     }, options);
   } else {
@@ -577,7 +601,6 @@ export const reconcileAutomationJobs = async ({
         locatorPath: workspacePaths.locatorPath,
       }),
       announce: true,
-      channel: 'last',
       existingJob: existingProactiveReminder,
     }, options);
   } else {
@@ -686,6 +709,52 @@ export const syncMemoryIndex = async ({ workspacePaths, openclawBin, cwd }) => {
   return await indexOpenClawMemory({ openclawBin, cwd });
 };
 
+export const buildPostRunSyncSpec = ({
+  skillRoot,
+  locatorPath,
+  sessionId,
+  runId,
+  followUpSync,
+}) => ({
+  trigger: {
+    event: 'run_completed',
+    acceptedIdentifiers: ['sessionId', 'runId'],
+  },
+  timing: 'immediate',
+  readStdoutAs: 'json',
+  action: {
+    kind: 'local_script',
+    script: path.join(skillRoot, 'scripts', 'sync_run.mjs'),
+    preferredIdentifier: sessionId ? 'sessionId' : runId ? 'runId' : undefined,
+    argsBySessionId: [
+      '--locator',
+      locatorPath,
+      '--session-id',
+      sessionId ?? '<sessionId>',
+    ],
+    argsByRunId: [
+      '--locator',
+      locatorPath,
+      '--run-id',
+      runId ?? '<runId>',
+    ],
+  },
+  fallback: followUpSync
+    ? compactObject({
+      kind: 'scheduled_retry',
+      deferred: followUpSync.deferred,
+      hostSchedulerSpec: followUpSync.hostSchedulerSpec,
+    })
+    : null,
+});
+
+const buildNextPlanInputSpec = () => ({
+  flags: HOST_HISTORY_INPUT_FLAGS,
+  acceptedPayload: 'items[]',
+  requiredFields: HOST_HISTORY_REQUIRED_FIELDS,
+  mergePolicy: 'prefer_local_runs_by_run_id',
+});
+
 const buildHostMemorySpec = ({
   workspacePaths,
   note,
@@ -722,6 +791,31 @@ const buildHostMemorySpec = ({
   };
 };
 
+export const buildHostWritebackSpec = ({
+  workspacePaths,
+  hostMemorySpec,
+  runRecordPath,
+  memoryPath,
+  recentAnalysisPath,
+}) => ({
+  kind: 'host_writeback',
+  required: workspacePaths.hostLocator.memoryBackend === 'host_native',
+  timing: 'immediate_after_local_sync',
+  purpose: ['long_term_memory', 'future_personalization'],
+  source: hostMemorySpec ? 'hostMemorySpec' : 'localArtifacts',
+  hostDecidesStorage: true,
+  readStdoutAs: 'json',
+  nextPlanInput: buildNextPlanInputSpec(),
+  instructions: hostMemorySpec
+    ? `Read JSON stdout, write ${hostMemorySpec.entryTitle} into host-managed long-term memory immediately, and reuse recent ClawCare history through ${HOST_HISTORY_INPUT_FLAGS.join(' or ')} before the next build_plan.mjs call.`
+    : 'Keep the local artifacts as the source of truth when no host-native memory exists.',
+  localArtifacts: compactObject({
+    runRecordPath,
+    memoryPath,
+    recentAnalysisPath,
+  }),
+});
+
 export const syncRunToWorkspace = async (workspacePaths, bundle, options = {}) => {
   const recordWrite = await writeRunRecord(workspacePaths, {
     apiBase: bundle.apiBase,
@@ -748,6 +842,13 @@ export const syncRunToWorkspace = async (workspacePaths, bundle, options = {}) =
     memoryPath: memoryWrite.memoryPath,
     recentAnalysisPath,
   });
+  const hostWritebackSpec = buildHostWritebackSpec({
+    workspacePaths,
+    hostMemorySpec,
+    runRecordPath: recordWrite.filePath,
+    memoryPath: memoryWrite.memoryPath,
+    recentAnalysisPath,
+  });
 
   return {
     runRecordPath: recordWrite.filePath,
@@ -757,6 +858,7 @@ export const syncRunToWorkspace = async (workspacePaths, bundle, options = {}) =
     recentAnalysisPath,
     memoryIndex,
     hostMemorySpec,
+    hostWritebackSpec,
     localArtifacts: compactObject({
       runRecordPath: recordWrite.filePath,
       memoryPath: memoryWrite.memoryPath,

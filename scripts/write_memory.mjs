@@ -5,6 +5,7 @@ import {
   ensureBootstrap,
   fetchSyncBundle,
   getApiBaseCandidates,
+  parseHostCapabilityFlags,
   parseFlagValue,
   parseBooleanValue,
   syncRunToWorkspace,
@@ -33,11 +34,13 @@ export const main = async (args = process.argv.slice(2)) => {
   const runId = parseFlagValue(args, '--run-id');
   const sessionId = parseFlagValue(args, '--session-id');
   const skipIndex = parseBooleanValue(parseFlagValue(args, '--skip-index'), false);
+  const hostCapabilities = parseHostCapabilityFlags(args);
 
   const bootstrap = await ensureBootstrap({
     configPath,
     locatorPath,
     markDisclosureShown: false,
+    hostCapabilities,
   });
   const workspacePaths = bootstrap.workspacePaths;
 
@@ -84,6 +87,7 @@ export const main = async (args = process.argv.slice(2)) => {
     recentAnalysisPath: result.recentAnalysisPath,
     memoryIndex: result.memoryIndex,
     hostMemorySpec: result.hostMemorySpec,
+    hostWritebackSpec: result.hostWritebackSpec,
     localArtifacts: result.localArtifacts,
   }, null, 2));
 };

@@ -76,6 +76,7 @@ export const main = async (args = process.argv.slice(2)) => {
     protocol: bundle.note.protocol,
     localArtifacts: result.localArtifacts,
     hostMemorySpec: result.hostMemorySpec,
+    hostWritebackSpec: result.hostWritebackSpec,
     result,
   }, null, 2));
 };

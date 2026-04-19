@@ -1,6 +1,6 @@
 interface:
   display_name: "ClawCare Protocol"
-  short_description: "Start ClawCare plans, reminders, and sync"
+  short_description: "Start ClawCare plans, reminders, sync, and host writeback"
   icon_large: "./assets/clawcare-mark.svg"
   brand_color: "#0F766E"
-  default_prompt: "Use ClawCare Protocol to start training, set a reminder, or sync a finished run."
+  default_prompt: "Use ClawCare Protocol to start training, set a reminder, sync a finished run, and apply the host writeback contract."

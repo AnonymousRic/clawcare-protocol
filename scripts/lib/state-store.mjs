@@ -406,6 +406,142 @@ const deriveHistorySignals = (recentRuns) => {
   });
 };
 
+const parseMaybeNumber = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const normalizeHostHistoryPayload = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (isRecord(value) && Array.isArray(value.items)) {
+    return value.items;
+  }
+  return [];
+};
+
+const readHostHistorySource = async (source, kind) => {
+  if (typeof source !== 'string' || !source.trim()) {
+    return [];
+  }
+  if (kind === 'json') {
+    return normalizeHostHistoryPayload(safeJsonParse(source.trim()));
+  }
+
+  const raw = await readFileIfExists(path.resolve(source));
+  if (!raw.trim()) {
+    return [];
+  }
+  return normalizeHostHistoryPayload(safeJsonParse(raw));
+};
+
+const normalizeHostHistoryItem = (item) => {
+  if (!isRecord(item)) {
+    return null;
+  }
+
+  const runId = trimToUndefined(item.runId ?? item.run_id);
+  const sessionId = trimToUndefined(item.sessionId ?? item.session_id);
+  const protocol = trimToUndefined(item.protocol);
+  const protocolFamily = trimToUndefined(item.protocolFamily ?? item.protocol_family);
+  const summary = trimToUndefined(item.summary);
+  const nextSuggestion = trimToUndefined(item.nextSuggestion ?? item.next_suggestion);
+  const syncedAt = trimToUndefined(
+    item.syncedAt
+    ?? item.synced_at
+    ?? item.capturedAt
+    ?? item.captured_at
+    ?? item.sync_generated_at,
+  );
+  const recommendedIntensity = trimToUndefined(
+    item.recommendedIntensity ?? item.recommended_intensity,
+  );
+  const warnings = uniqueStrings(Array.isArray(item.warnings) ? item.warnings : []);
+  const conflicts = uniqueStrings(Array.isArray(item.conflicts) ? item.conflicts : []);
+
+  if (!runId && !sessionId && !summary && !nextSuggestion && !syncedAt) {
+    return null;
+  }
+
+  return compactObject({
+    runId,
+    sessionId,
+    protocol,
+    protocolFamily,
+    summary,
+    nextSuggestion,
+    recommendedIntensity,
+    warnings,
+    conflicts,
+    syncedAt,
+    completion: parseMaybeNumber(item.completion),
+    fatigue: parseMaybeNumber(item.fatigue),
+    rerouted: item.rerouted === true
+      || (Array.isArray(item.reroutes) && item.reroutes.length > 0),
+  });
+};
+
+const collectHostHistory = async (options = {}) => {
+  const jsonItems = await readHostHistorySource(options.hostHistoryJson, 'json');
+  const fileItems = await readHostHistorySource(options.hostHistoryFile, 'file');
+  const normalizedItems = uniqueStrings(
+    [...jsonItems, ...fileItems]
+      .map((entry) => stableStringify(normalizeHostHistoryItem(entry)))
+      .filter((entry) => entry !== undefined),
+  )
+    .map((entry) => safeJsonParse(entry))
+    .filter((entry) => entry !== null);
+
+  return normalizedItems.map((entry) => normalizeHostHistoryItem(entry)).filter(Boolean);
+};
+
+const buildRecentRunSignalsFromHostHistory = (items) => (
+  items.map((item) => compactObject({
+    runId: item.runId,
+    sessionId: item.sessionId,
+    protocol_id: item.protocol ?? 'clawcare-protocol',
+    protocol_family: item.protocolFamily,
+    completion: item.completion,
+    fatigue: item.fatigue,
+    rerouted: item.rerouted,
+    summary: item.summary,
+    capturedAt: item.syncedAt,
+  }))
+);
+
+const mergeRecentRuns = (localRuns, hostRuns) => {
+  const merged = [];
+  const seen = new Set();
+  for (const run of [...localRuns, ...hostRuns]) {
+    const key = trimToUndefined(run.runId)
+      ?? trimToUndefined(run.sessionId)
+      ?? `${run.protocol_id ?? 'clawcare'}|${run.capturedAt ?? ''}|${run.summary ?? ''}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push(run);
+  }
+  return merged
+    .sort((left, right) => String(right.capturedAt ?? '').localeCompare(String(left.capturedAt ?? '')))
+    .slice(0, 5);
+};
+
+const buildHostHistoryMemorySignals = (items) => uniqueStrings(
+  items.flatMap((item) => [
+    item.summary,
+    item.nextSuggestion ? `Next: ${item.nextSuggestion}` : undefined,
+    ...(Array.isArray(item.warnings) ? item.warnings.map((warning) => `Warning: ${warning}`) : []),
+    ...(Array.isArray(item.conflicts) ? item.conflicts.map((conflict) => `Conflict: ${conflict}`) : []),
+  ]
+    .filter(Boolean)
+    .map((entry) => summarizeText(entry))),
+).slice(0, 6);
+
 const extractJsonFence = (markdown) => {
   const match = markdown.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (!match) {
@@ -478,6 +614,8 @@ export const listRunRecords = async (runsDir) => {
 
 export const buildRecentRunSignalsFromRecords = (records) => (
   records.slice(0, 5).map((record) => ({
+    runId: record.note?.run_id,
+    sessionId: record.note?.session_id,
     protocol_id: record.session?.protocol_id ?? record.note?.protocol ?? 'clawcare-protocol',
     protocol_family: record.session?.protocol_family ?? record.reminder?.protocol_family,
     completion: record.note?.completion,
@@ -526,12 +664,17 @@ export const collectPlanContext = async (
 ) => {
   const recentAnalysis = await collectRecentAnalysisSignals(workspacePaths.recentAnalysisPath);
   const records = await listRunRecords(workspacePaths.runsDir);
-  const recentRuns = buildRecentRunSignalsFromRecords(records);
+  const hostHistoryItems = await collectHostHistory(options);
+  const recentRuns = mergeRecentRuns(
+    buildRecentRunSignalsFromRecords(records),
+    buildRecentRunSignalsFromHostHistory(hostHistoryItems),
+  );
   const history = deriveHistorySignals(recentRuns);
   const memorySignals = uniqueStrings([
     ...recentAnalysis.memorySignals,
     recentAnalysis.summary,
     ...(await collectMemorySignals(workspacePaths.memoryDir)),
+    ...buildHostHistoryMemorySignals(hostHistoryItems),
   ]).slice(0, 6);
   const nowSignals = computeNowSignals(options.now instanceof Date ? options.now : new Date());
   const workState = compactObject({
@@ -573,6 +716,7 @@ export const collectPlanContext = async (
     workState,
     nowSignals,
     records,
+    hostHistoryItems,
   };
 };
 

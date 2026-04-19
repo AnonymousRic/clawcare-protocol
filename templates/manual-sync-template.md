@@ -1,10 +1,13 @@
-## 奇点行动 训练记录
+## ClawCare Training Sync Record
 
-- 会话 ID: <session_id>
-- 协议名称: <protocol_name>
-- 完成度: <0.00-1.00>
-- 稳定度: <0.00-1.00>
-- 对称性: <0.00-1.00>
-- 疲劳值: <0.00-1.00>
-- 总结: <简短自然语言总结>
-- 下次建议: <简短下一步建议>
+- Session ID: `<session_id>`
+- Run ID: `<run_id>`
+- Protocol: `<protocol_name>`
+- Completion: `<0.00-1.00>`
+- Stability: `<0.00-1.00>`
+- Symmetry: `<0.00-1.00>`
+- Fatigue: `<0.00-1.00>`
+- Summary: `<brief natural-language summary>`
+- Next Suggestion: `<brief next-step suggestion>`
+
+If the host has native long-term memory, completing this manual sync is not enough. The host should immediately write the returned summary into its own memory system and pass recent ClawCare history back into the next `build_plan.mjs` call.

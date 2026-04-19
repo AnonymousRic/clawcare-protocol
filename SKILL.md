@@ -73,10 +73,12 @@ Every script response should be treated as structured host guidance. Important f
 - `locatorPath`
 - `hostProfile`
 - `activationSpec`
+- `postRunSyncSpec`
 - `syncPolicy`
 - `hostActionHints`
 - `hostSchedulerSpec` or `null`
 - `hostMemorySpec` or `null`
+- `hostWritebackSpec` or `null`
 - `localArtifacts`
 
 Interpretation rules:
@@ -85,11 +87,16 @@ Interpretation rules:
   It may be `deeplink`, `web`, or `message`.
 - `syncPolicy` describes the post-run contract.
   The default mode is `event_first`, with only a short fallback suggestion when needed.
+- `postRunSyncSpec` is the machine-readable immediate sync contract.
+  When the host sees `run_completed`, it should run the returned local `sync_run.mjs` action first and treat scheduled follow-up sync only as fallback.
 - `hostActionHints` are semantic hints for the host agent.
   They describe what to do, not where the host must store data.
 - `hostSchedulerSpec` means the host should apply its native scheduler if it has one.
+- When `hostSchedulerSpec.channel` is omitted for `scheduledReminder` or `proactiveReminder`, the host should choose the best reminder channel itself.
+  Prefer the user's most-used IM-style channel when known; otherwise fall back to the host default reminder channel.
 - `hostMemorySpec` means the host should mirror the local summary into its own native memory if it has one.
   It does not prescribe a native path or provider-specific target.
+- `hostWritebackSpec` tells the host whether immediate long-term memory writeback is required after local sync, and how the host should feed recent ClawCare history back into the next `build_plan.mjs` call.
 - `localArtifacts` are the stable files the skill already wrote locally. They are the compatibility fallback, not proof that host-native work is complete.
 
 ## Workflow
@@ -106,6 +113,9 @@ Interpretation rules:
 - When the host receives a completed run event or already has the current session/run context:
   prefer immediate sync first.
   Treat delayed follow-up sync only as a short fallback, not as the main path.
+- Before the next planning call, the host may pass back recent ClawCare history with:
+  `--host-history-json "<json>"`
+  or `--host-history-file "<path>"`
 - When the user wants long-term defaults or recurring behavior:
   map the request into a JSON patch and run `settings_patch.mjs` with `--locator "<locatorPath>"`.
 
@@ -115,6 +125,8 @@ Interpretation rules:
 - `scheduledReminder` is user-confirmed as soon as the user explicitly asks for it.
 - `proactiveReminder` stays off by default and needs clear opt-in.
 - Timed reminder generation must not create a real training session before activation.
+- Omitted reminder `channel` means the host chooses delivery.
+  Prefer the user's most-used IM-style channel first, then fall back to the host default reminder channel.
 - Hermes should not simulate OpenClaw URI callback routing.
   Prefer native message delivery, webhooks, API-server flows, or browser/web entry.
 

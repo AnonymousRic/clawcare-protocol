@@ -25,6 +25,8 @@ export const main = async (args = process.argv.slice(2)) => {
   const reminderKind = parseFlagValue(args, '--reminder-kind');
   const baseUrl = parseFlagValue(args, '--base');
   const returnTo = parseFlagValue(args, '--return-to');
+  const hostHistoryJson = parseFlagValue(args, '--host-history-json');
+  const hostHistoryFile = parseFlagValue(args, '--host-history-file');
   const hostCapabilities = parseHostCapabilityFlags(args);
   const bootstrap = await ensureBootstrap({
     configPath,
@@ -36,6 +38,8 @@ export const main = async (args = process.argv.slice(2)) => {
     intentText,
     baseUrl,
     returnTo,
+    hostHistoryJson,
+    hostHistoryFile,
   });
   const proactiveDecision = reminderKind === 'proactive'
     ? evaluateProactiveReminder(planContext)
@@ -99,6 +103,7 @@ export const main = async (args = process.argv.slice(2)) => {
     reminderKind,
     proactiveDecision,
     hostCapabilities,
+    skillRoot,
   });
 
   if (opened && result.launchUrl) {
