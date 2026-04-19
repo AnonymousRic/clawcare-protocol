@@ -9,8 +9,8 @@ export const CLAWCARE_DEFAULT_BASE_URL = 'https://clawcare-protocol.vercel.app';
 export const CLAWCARE_DEFAULT_RETURN_TO = 'openclaw://clawcare';
 export const CLAWCARE_NO_REPLY = 'NO_REPLY';
 export const CLAWCARE_ANNOUNCE_SKIP = 'ANNOUNCE_SKIP';
-export const CLAWCARE_FOLLOW_UP_DELAY_MIN = 20;
-export const CLAWCARE_SYNC_RETRY_DELAY_MIN = 10;
+export const CLAWCARE_FOLLOW_UP_DELAY_MIN = 1;
+export const CLAWCARE_SYNC_RETRY_DELAY_MIN = 2;
 export const CLAWCARE_SYNC_RETRY_COUNT = 1;
 
 const DEFAULT_WEEKDAYS = [1, 2, 3, 4, 5];
@@ -36,7 +36,7 @@ export const VALID_REMINDER_KINDS = new Set(['direct', 'scheduled', 'proactive',
 
 export const DEFAULT_CONFIG = {
   baseUrl: CLAWCARE_DEFAULT_BASE_URL,
-  returnTo: CLAWCARE_DEFAULT_RETURN_TO,
+  returnTo: '',
   automation: {
     dailyPlan: {
       enabled: false,
@@ -246,7 +246,7 @@ export const detectHostKind = (overrides = {}) => {
     return 'hermes';
   }
 
-  return 'openclaw';
+  return 'generic_agent';
 };
 
 export const buildResolvedHostCapabilities = (hostKind, overrides = {}) => ({

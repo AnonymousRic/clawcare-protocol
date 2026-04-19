@@ -505,10 +505,10 @@ const buildReminderActivationMessage = ({
     ? ` (${family.trim()})`
     : '';
   if (typeof reminderId === 'string' && reminderId.trim()) {
-    return `Use ClawCare Protocol to activate prepared reminder reminderId=${reminderId.trim()}${familySuffix}. Run launch_prepared_reminder.mjs, arm follow-up sync, then open or return the training page.`;
+    return `Use ClawCare Protocol to activate prepared reminder reminderId=${reminderId.trim()}${familySuffix}. Run launch_prepared_reminder.mjs, apply the skill's immediate sync policy, then open or return the training page.`;
   }
   if (typeof activationRef === 'string' && activationRef.trim()) {
-    return `Use ClawCare Protocol to activate local prepared reminder activationRef=${activationRef.trim()}${familySuffix}. Run launch_prepared_reminder.mjs, arm follow-up sync, then open or return the training page.`;
+    return `Use ClawCare Protocol to activate local prepared reminder activationRef=${activationRef.trim()}${familySuffix}. Run launch_prepared_reminder.mjs, apply the skill's immediate sync policy, then open or return the training page.`;
   }
   return '';
 };
@@ -659,6 +659,47 @@ const buildReminderMessageText = ({
   return lines.join('\n');
 };
 
+const parseFallbackDelayMin = (followUpSync) => {
+  const atValue = followUpSync?.hostSchedulerSpec?.schedule?.at;
+  if (typeof atValue === 'string') {
+    const match = atValue.match(/(\d+)/);
+    if (match) {
+      return Number.parseInt(match[1], 10);
+    }
+  }
+  return null;
+};
+
+const buildSyncPolicy = ({
+  bootstrap,
+  followUpSync,
+}) => ({
+  mode: 'event_first',
+  fallbackScheduled: Boolean(followUpSync),
+  fallbackDelayMin: parseFallbackDelayMin(followUpSync),
+  requiresHostNativeWriteback: bootstrap.workspacePaths.hostLocator.memoryBackend === 'host_native',
+});
+
+const buildHostActionHints = ({
+  bootstrap,
+  followUpSync,
+}) => {
+  const hints = [
+    '训练完成后，宿主应优先基于当前 session 或 run 上下文立即执行同步。',
+  ];
+
+  if (followUpSync) {
+    hints.push('如果即时同步链路缺失，可在短窗口内执行一次补偿同步。');
+  }
+  if (bootstrap.workspacePaths.hostLocator.memoryBackend === 'host_native') {
+    hints.push('宿主可自行选择最合适的 native memory 或记忆位置写入摘要。');
+  } else {
+    hints.push('如宿主不管理 native memory，本 skill 会继续维护本地兼容镜像文件。');
+  }
+
+  return hints;
+};
+
 export const buildSkippedBuildPlanResult = ({
   bootstrap,
   reminderKind,
@@ -675,6 +716,14 @@ export const buildSkippedBuildPlanResult = ({
   shouldAnnounce: false,
   reasonCode: proactiveDecision?.reasonCode ?? 'skip',
   reasonText: getProactiveReasonText(proactiveDecision),
+  syncPolicy: buildSyncPolicy({
+    bootstrap,
+    followUpSync: null,
+  }),
+  hostActionHints: buildHostActionHints({
+    bootstrap,
+    followUpSync: null,
+  }),
   activationSpec: null,
   localArtifacts: null,
 });
@@ -715,6 +764,14 @@ export const buildBuildPlanResult = ({
     activationMode: launchTargets.activationMode,
     activationSpec: launchTargets.activationSpec,
     followUpArmed: launchTargets.followUpArmed,
+    syncPolicy: buildSyncPolicy({
+      bootstrap,
+      followUpSync,
+    }),
+    hostActionHints: buildHostActionHints({
+      bootstrap,
+      followUpSync,
+    }),
     reminderId: reminderPlan.reminder.reminder_id,
     activationRef: reminderPlan.localPreparedRef,
     title: displayCopy.title,

@@ -52,7 +52,7 @@ export const buildCronExpressionForLocalTime = (timeText, weekdays = null) => {
 const buildCronSystemEvent = (action, payload) => [
   `ClawCare automation event: ${action}.`,
   'Use the installed `clawcare-protocol` skill.',
-  'Use the `exec` tool to run the local Node script described below exactly once.',
+  'Use the host agent\'s local execution capability to run the local Node script described below exactly once.',
   'Only touch files inside the resolved ClawCare state root and its local memory mirror.',
   `When the work completes successfully and no direct user reply is required, respond with ${CLAWCARE_NO_REPLY}.`,
   '',
@@ -69,7 +69,7 @@ const buildReminderTurnMessage = ({
 }) => [
   `ClawCare reminder run: ${reminderKind}.`,
   'Use the installed `clawcare-protocol` skill.',
-  'Use the `exec` tool to run the local Node script below exactly once.',
+  'Use the host agent\'s local execution capability to run the local Node script below exactly once.',
   'Read the JSON stdout.',
   'If the result contains "announceToken", reply with that token exactly.',
   'Otherwise reply with the field "messageText" only.',
@@ -702,9 +702,7 @@ const buildHostMemorySpec = ({
     action: 'mirror_local_summary',
     backend: workspacePaths.hostLocator.memoryBackend,
     status: 'pending_host_write',
-    preferredTargets: workspacePaths.hostLocator.hostKind === 'hermes'
-      ? ['memory', 'provider']
-      : ['memory'],
+    tags: ['clawcare', 'training_summary', workspacePaths.hostLocator.hostKind],
     summary: note.summary,
     nextSuggestion: note.next_suggestion,
     entryTitle: `ClawCare ${note.protocol ?? 'training'} ${note.run_id}`,

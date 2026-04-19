@@ -10,7 +10,7 @@
     },
     "postRunSync": {
       "enabled": true,
-      "followUpDelayMin": 20
+      "followUpDelayMin": 1
     },
     "scheduledReminder": {
       "enabled": false,

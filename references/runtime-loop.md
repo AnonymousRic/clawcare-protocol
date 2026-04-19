@@ -37,6 +37,7 @@ The normal flow is:
 2. keep `locatorPath`
 3. later scripts use `--locator`
 4. host reads `activationSpec`, `hostSchedulerSpec`, `hostMemorySpec`
+   and `syncPolicy`, `hostActionHints`
 5. host applies native abilities when available
 
 ## Script Roles
@@ -50,11 +51,12 @@ The normal flow is:
   reads local history, `recent_analysis.md`, and local memory mirror
   produces a personalized plan or reminder payload
   returns `activationSpec`
-  may return `followUpSync` with `hostSchedulerSpec`
+  returns `syncPolicy` and `hostActionHints`
+  may return `followUpSync` with `hostSchedulerSpec` as a short fallback only
 - `launch_prepared_reminder.mjs`
   activates a delayed reminder
   creates the real training session
-  may arm post-run sync
+  may arm short-window post-run sync fallback
   returns a final `activationSpec` for the ready session
 - `sync_run.mjs`
   fetches a completed run
@@ -71,6 +73,8 @@ The normal flow is:
 
 ## Scheduler Contract
 
+- Immediate sync after run completion is the preferred path.
+- Delayed follow-up sync is only a short fallback when the host cannot complete immediate sync.
 - OpenClaw hosts may create or edit jobs directly.
 - Hermes or generic hosts should treat the returned `hostSchedulerSpec` as the authoritative desired job state.
 - Do not invent a different job name, schedule, or file target unless the host has a hard platform limit.
@@ -88,6 +92,7 @@ After that:
 
 - OpenClaw may run native memory indexing directly.
 - Hermes or another host with native memory should use `hostMemorySpec` to mirror the summary into its own memory system.
+  The skill provides summary, tags, and related local artifacts, not a forced native target path.
 - If the host has no native memory, the local files remain the source of truth.
 
 ## Reminder Routing
@@ -103,3 +108,5 @@ After that:
 - Optional text fields that are blank must be omitted, not sent as empty strings.
 - Fresh config must not require placeholder text before `build_plan.mjs` can succeed.
 - Reminder fallback copy must stay user-facing and must not mention API errors or internal fallback logic.
+- Pre-check copy must reflect the final action graph.
+  If final nodes still include a motion category, use comfort-range wording instead of "skip" or "avoid" wording.

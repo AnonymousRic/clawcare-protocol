@@ -11,6 +11,9 @@ Use this skill when the user wants ClawCare help.
 
 - Keep every action inside the installed skill bundle and the resolved ClawCare state root.
 - The host agent decides the stable storage root on first run. The skill only reuses the returned `locatorPath` and `hostProfile`.
+- The training route stays mostly fixed. Use AI to tune intensity, duration, reps, angle, and pacing first.
+- Do not rewrite actions or switch protocol family unless the user explicitly refuses an action or a clear safety restriction blocks it.
+- User-facing copy must match the final executable session. If the final nodes still include a motion category, describe it as reduced range, fewer reps, or comfort-first pacing, not as "skip" or "avoid".
 - The skill may maintain only:
   - `config.json`
   - `runs/<run-id>.json`
@@ -70,6 +73,8 @@ Every script response should be treated as structured host guidance. Important f
 - `locatorPath`
 - `hostProfile`
 - `activationSpec`
+- `syncPolicy`
+- `hostActionHints`
 - `hostSchedulerSpec` or `null`
 - `hostMemorySpec` or `null`
 - `localArtifacts`
@@ -78,8 +83,13 @@ Interpretation rules:
 
 - `activationSpec` tells the host how to route user entry.
   It may be `deeplink`, `web`, or `message`.
+- `syncPolicy` describes the post-run contract.
+  The default mode is `event_first`, with only a short fallback suggestion when needed.
+- `hostActionHints` are semantic hints for the host agent.
+  They describe what to do, not where the host must store data.
 - `hostSchedulerSpec` means the host should apply its native scheduler if it has one.
 - `hostMemorySpec` means the host should mirror the local summary into its own native memory if it has one.
+  It does not prescribe a native path or provider-specific target.
 - `localArtifacts` are the stable files the skill already wrote locally. They are the compatibility fallback, not proof that host-native work is complete.
 
 ## Workflow
@@ -93,6 +103,9 @@ Interpretation rules:
   run `launch_prepared_reminder.mjs` with `--locator "<locatorPath>"` and either `--reminder-id` or `--activation-ref`.
 - When a run finishes and should be written back:
   run `sync_run.mjs` with `--locator "<locatorPath>"` and `--session-id` or `--run-id`.
+- When the host receives a completed run event or already has the current session/run context:
+  prefer immediate sync first.
+  Treat delayed follow-up sync only as a short fallback, not as the main path.
 - When the user wants long-term defaults or recurring behavior:
   map the request into a JSON patch and run `settings_patch.mjs` with `--locator "<locatorPath>"`.
 
@@ -108,4 +121,5 @@ Interpretation rules:
 ## References
 
 - Read [references/runtime-loop.md](references/runtime-loop.md) for script roles, host contracts, and reminder delivery rules.
+- Read [references/host-adapter-examples.md](references/host-adapter-examples.md) for optional OpenClaw and Hermes adapter examples.
 - Read [references/privacy-boundary.md](references/privacy-boundary.md) before enabling proactive reminders or when privacy questions appear.

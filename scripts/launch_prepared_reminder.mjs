@@ -11,6 +11,15 @@ import {
   scheduleFollowUpSyncJob,
 } from './lib/runtime.mjs';
 
+const parseFallbackDelayMin = (followUpSync) => {
+  const atValue = followUpSync?.hostSchedulerSpec?.schedule?.at;
+  if (typeof atValue !== 'string') {
+    return null;
+  }
+  const match = atValue.match(/(\d+)/);
+  return match ? Number.parseInt(match[1], 10) : null;
+};
+
 export const main = async (args = process.argv.slice(2)) => {
   const reminderId = parseFlagValue(args, '--reminder-id');
   const activationRef = parseFlagValue(args, '--activation-ref');
@@ -112,6 +121,19 @@ export const main = async (args = process.argv.slice(2)) => {
       }
       : null,
     followUpArmed: Boolean(followUpSync),
+    syncPolicy: {
+      mode: 'event_first',
+      fallbackScheduled: Boolean(followUpSync),
+      fallbackDelayMin: parseFallbackDelayMin(followUpSync),
+      requiresHostNativeWriteback: bootstrap.workspacePaths.hostLocator.memoryBackend === 'host_native',
+    },
+    hostActionHints: [
+      '训练完成后，宿主应优先基于当前 session 或 run 上下文立即执行同步。',
+      ...(followUpSync ? ['如果即时同步链路缺失，可在短窗口内执行一次补偿同步。'] : []),
+      bootstrap.workspacePaths.hostLocator.memoryBackend === 'host_native'
+        ? '宿主可自行选择最合适的 native memory 或记忆位置写入摘要。'
+        : '如宿主不管理 native memory，本 skill 会继续维护本地兼容镜像文件。',
+    ],
     followUpSync,
     filePath: launchResult.filePath,
     preparedRefPath: launchResult.preparedRefPath,
