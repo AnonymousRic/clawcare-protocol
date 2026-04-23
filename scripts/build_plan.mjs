@@ -12,15 +12,12 @@ import {
   parseHostCapabilityFlags,
   parseFlagValue,
   requestReminderPreparationWithFallback,
-  requestReminderPlan,
   resolveSkillRoot,
-  scheduleFollowUpSyncJob,
 } from './lib/runtime.mjs';
 
 export const main = async (args = process.argv.slice(2)) => {
   const configPath = parseFlagValue(args, '--config');
   const locatorPath = parseFlagValue(args, '--locator');
-  const openclawBin = parseFlagValue(args, '--openclaw-bin');
   const intentText = parseFlagValue(args, '--intent');
   const reminderKind = parseFlagValue(args, '--reminder-kind');
   const baseUrl = parseFlagValue(args, '--base');
@@ -54,39 +51,17 @@ export const main = async (args = process.argv.slice(2)) => {
     return;
   }
 
-  const prepareOnly = reminderKind === 'scheduled'
-    || reminderKind === 'proactive'
-    || reminderKind === 'daily_plan';
   const apiBaseCandidates = getApiBaseCandidates(baseUrl ?? bootstrap.config.baseUrl);
-  const reminderPlan = prepareOnly
-    ? await requestReminderPreparationWithFallback({
-      payload: planContext.payload,
-      baseCandidates: apiBaseCandidates,
-      reminderKind,
-      proactiveDecision,
-      workspacePaths: bootstrap.workspacePaths,
-    })
-    : await requestReminderPlan(
-      planContext.payload,
-      apiBaseCandidates,
-    );
+  const reminderPlan = await requestReminderPreparationWithFallback({
+    payload: planContext.payload,
+    baseCandidates: apiBaseCandidates,
+    reminderKind,
+    proactiveDecision,
+    workspacePaths: bootstrap.workspacePaths,
+  });
   const cachePath = await cacheDailyPlan(bootstrap.workspacePaths, reminderPlan);
   const skillRoot = resolveSkillRoot(import.meta.url);
-  let followUpSync = null;
-  if (
-    !prepareOnly
-    && bootstrap.config.automation.postRunSync.enabled
-    && reminderPlan.session?.session_id
-  ) {
-    followUpSync = await scheduleFollowUpSyncJob({
-      config: bootstrap.config,
-      workspacePaths: bootstrap.workspacePaths,
-      skillRoot,
-      sessionId: reminderPlan.session.session_id,
-      delayMin: Number.parseInt(parseFlagValue(args, '--delay-min') ?? '', 10) || undefined,
-      openclawBin,
-    });
-  }
+  const followUpSync = null;
 
   const opened = buildDailyPlanShouldOpen(bootstrap.config, {
     reminderKind,

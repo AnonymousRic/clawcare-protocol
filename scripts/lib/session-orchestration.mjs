@@ -525,7 +525,7 @@ const resolveBuildPlanLaunchTargets = ({
   const normalizedKind = normalizeReminderKind(reminderKind);
   const browserLaunchUrl = session.launch_url ?? reminder.launch_url ?? '';
 
-  if (normalizedKind === 'direct' || session.session_id) {
+  if (session.session_id) {
     return {
       launchUrl: browserLaunchUrl,
       activationUrl: browserLaunchUrl,

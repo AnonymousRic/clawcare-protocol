@@ -121,6 +121,9 @@ Interpretation rules:
 
 ## Reminder Rules
 
+- `build_plan.mjs` should prepare a reminder-style launch target first, even for `direct` starts.
+- The host should treat the returned reminder launch URL or callback as the stable OpenClaw entrypoint.
+- Do not keep or reuse raw `?session=compiled-*` links as the default OpenClaw launch contract.
 - `dailyPlan` is silent preparation only.
 - `scheduledReminder` is user-confirmed as soon as the user explicitly asks for it.
 - `proactiveReminder` stays off by default and needs clear opt-in.
