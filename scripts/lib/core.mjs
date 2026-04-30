@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-export const CLAWCARE_DEFAULT_BASE_URL = 'https://clawcare-protocol.vercel.app';
+export const CLAWCARE_DEFAULT_BASE_URL = 'https://clawcare.huanyuliuguang.cn';
 export const CLAWCARE_DEFAULT_RETURN_TO = 'openclaw://clawcare';
 export const CLAWCARE_NO_REPLY = 'NO_REPLY';
 export const CLAWCARE_ANNOUNCE_SKIP = 'ANNOUNCE_SKIP';

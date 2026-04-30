@@ -1,5 +1,5 @@
 {
-  "baseUrl": "https://clawcare-protocol.vercel.app",
+  "baseUrl": "https://clawcare.huanyuliuguang.cn",
   "returnTo": "openclaw://clawcare",
   "automation": {
     "dailyPlan": {
