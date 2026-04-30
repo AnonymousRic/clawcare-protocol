@@ -5,11 +5,11 @@ import { spawn } from 'node:child_process';
 
 import {
   CLAWCARE_ANNOUNCE_SKIP,
-  CLAWCARE_DEFAULT_BASE_URL,
   CLAWCARE_DEFAULT_RETURN_TO,
   compactObject,
   ensureDirectory,
   isRecord,
+  normalizeClawCareBaseUrl,
   normalizeReminderKind,
   parseJsonFileIfExists,
   readFileIfExists,
@@ -26,7 +26,7 @@ import { formatMemoryMarkdown } from './state-store.mjs';
 export const getApiBaseCandidates = (...values) => uniqueStrings(
   values.flatMap((value) => String(value ?? '')
     .split(/[,\s]+/)
-    .map((entry) => stripTrailingSlash(entry))
+    .map((entry) => normalizeClawCareBaseUrl(entry, ''))
     .filter(Boolean)),
 );
 
@@ -37,7 +37,11 @@ const requestJsonWithCandidates = async (
   fetchImpl = fetch,
 ) => {
   const errors = [];
-  for (const base of baseCandidates) {
+  for (const candidate of baseCandidates) {
+    const base = normalizeClawCareBaseUrl(candidate, '');
+    if (!base) {
+      continue;
+    }
     try {
       const response = await fetchImpl(`${stripTrailingSlash(base)}${apiPath}`, init);
       if (!response.ok) {
@@ -220,7 +224,7 @@ const resolveFallbackFamily = (payload = {}) => {
 };
 
 const buildFallbackEntryUrl = (payload = {}, intentText) => {
-  const baseUrl = stripTrailingSlash(String(payload.baseUrl ?? CLAWCARE_DEFAULT_BASE_URL));
+  const baseUrl = normalizeClawCareBaseUrl(payload.baseUrl);
   const url = new URL(`${baseUrl}/`);
   url.searchParams.set('mode', 'protocol');
   url.searchParams.set('entry', 'openclaw');
@@ -287,7 +291,7 @@ const buildLocalFallbackReminderPlan = async ({
     : undefined;
 
   return {
-    apiBase: baseCandidates[0] ?? stripTrailingSlash(String(payload.baseUrl ?? CLAWCARE_DEFAULT_BASE_URL)),
+    apiBase: baseCandidates[0] ?? normalizeClawCareBaseUrl(payload.baseUrl),
     fallbackUsed: true,
     localPreparedRef: activationRef,
     reminder: {

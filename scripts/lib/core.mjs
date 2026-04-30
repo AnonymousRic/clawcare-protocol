@@ -6,6 +6,12 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 export const CLAWCARE_DEFAULT_BASE_URL = 'https://clawcare.huanyuliuguang.cn';
+export const CLAWCARE_LEGACY_PUBLIC_BASE_URLS = new Set([
+  'https://clawcare-protocol.vercel.app',
+  'http://47.114.108.211:30900',
+  'http://47.114.108.211:32416',
+  'https://47.114.108.211:32416',
+]);
 export const CLAWCARE_DEFAULT_RETURN_TO = 'openclaw://clawcare';
 export const CLAWCARE_NO_REPLY = 'NO_REPLY';
 export const CLAWCARE_ANNOUNCE_SKIP = 'ANNOUNCE_SKIP';
@@ -98,6 +104,30 @@ export const DEFAULT_CONFIG = {
 };
 
 export const stripTrailingSlash = (value) => value.replace(/\/+$/, '');
+export const isLegacyClawCareBaseUrl = (value) => {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return Boolean(
+    trimmed
+    && CLAWCARE_LEGACY_PUBLIC_BASE_URLS.has(stripTrailingSlash(trimmed).toLowerCase()),
+  );
+};
+export const normalizeClawCareBaseUrl = (
+  value,
+  fallback = CLAWCARE_DEFAULT_BASE_URL,
+) => {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  if (trimmed) {
+    const normalized = stripTrailingSlash(trimmed);
+    return isLegacyClawCareBaseUrl(normalized) ? CLAWCARE_DEFAULT_BASE_URL : normalized;
+  }
+  if (fallback === '') {
+    return '';
+  }
+  const normalizedFallback = typeof fallback === 'string' && fallback.trim()
+    ? stripTrailingSlash(fallback.trim())
+    : CLAWCARE_DEFAULT_BASE_URL;
+  return isLegacyClawCareBaseUrl(normalizedFallback) ? CLAWCARE_DEFAULT_BASE_URL : normalizedFallback;
+};
 export const isRecord = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
 export const deepClone = (value) => JSON.parse(JSON.stringify(value));
 export const stableStringify = (value) => JSON.stringify(value, null, 2);

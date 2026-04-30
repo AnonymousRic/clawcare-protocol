@@ -2,7 +2,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import {
-  CLAWCARE_DEFAULT_BASE_URL,
   DEFAULT_CONFIG,
   ISO_DATE_PATTERN,
   ISO_DATE_TIME_PATTERN,
@@ -18,6 +17,8 @@ import {
   ensureDirectory,
   isMissingFileError,
   isRecord,
+  isLegacyClawCareBaseUrl,
+  normalizeClawCareBaseUrl,
   parseBooleanValue,
   parseJsonFileIfExists,
   parseMaybeInt,
@@ -25,7 +26,6 @@ import {
   resolveWorkspacePaths,
   safeJsonParse,
   stableStringify,
-  stripTrailingSlash,
   summarizeText,
   trimToUndefined,
   uniqueStrings,
@@ -140,9 +140,7 @@ export const normalizeConfig = (rawConfig = {}, workspacePaths = resolveWorkspac
   const defaultReturnTo = getDefaultReturnToForHost(workspacePaths.hostLocator);
 
   return {
-    baseUrl: typeof source.baseUrl === 'string' && source.baseUrl.trim()
-      ? stripTrailingSlash(source.baseUrl.trim())
-      : CLAWCARE_DEFAULT_BASE_URL,
+    baseUrl: normalizeClawCareBaseUrl(source.baseUrl),
     returnTo: typeof source.returnTo === 'string' && source.returnTo.trim()
       ? source.returnTo.trim()
       : defaultReturnTo,
@@ -323,7 +321,10 @@ export const ensureBootstrap = async (options = {}) => {
   }
 
   const normalizedRaw = normalizeConfig(loaded.rawConfig, effectiveWorkspacePaths);
-  const shouldWrite = !loaded.fileExists || stableStringify(normalizedRaw) !== stableStringify(effectiveConfig);
+  const shouldMigrateLegacyBaseUrl = isLegacyClawCareBaseUrl(loaded.rawConfig?.baseUrl);
+  const shouldWrite = !loaded.fileExists
+    || shouldMigrateLegacyBaseUrl
+    || stableStringify(normalizedRaw) !== stableStringify(effectiveConfig);
   const shouldWriteLocator = stableStringify(loaded.rawLocator) !== stableStringify(effectiveLocator);
   if (shouldWrite) {
     await writeConfig(effectiveWorkspacePaths.configPath, effectiveConfig);
@@ -700,7 +701,7 @@ export const collectPlanContext = async (
 
   return {
     payload: compactObject({
-      baseUrl: options.baseUrl ?? config.baseUrl,
+      baseUrl: normalizeClawCareBaseUrl(options.baseUrl ?? config.baseUrl),
       return_to: options.returnTo ?? config.returnTo,
       openclawContext: config.openclawContext,
       userIntent,
